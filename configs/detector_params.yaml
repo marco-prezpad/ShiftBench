@@ -1,0 +1,27 @@
+# Detector hyperparameters
+# Author: Marco Pérez Padilla
+# Date:   02-08-2026
+
+mmd:
+  kernel: "rbf"
+  sigma: "median"
+  n_permutations: 1000
+  batch_size: 256
+
+lsdd:
+  sigma: "median"
+  n_permutations: 1000
+  batch_size: 256
+
+kl:
+  n_neighbors: 5
+  epsilon: 1e-8
+
+embedding_drift:
+  method: "pca"
+  n_components: 64
+  test: "mmd"
+
+evidently:
+  test: "DataDriftTable"
+  threshold: 0.05

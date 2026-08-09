@@ -1,0 +1,55 @@
+# ShiftBench global configuration
+# Author: Marco Pérez Padilla
+# Date:   09-08-2026
+
+experiment:
+  random_state: 42
+  n_bootstrap_runs: 30
+  test_size: 0.3
+  significance_level: 0.05
+
+datasets:
+  adult:
+    enabled: true
+    name: "UCI Adult"
+    domain: "tabular"
+    file: "data/adult.data"
+    shift:
+      type: "demographic"
+      subgroup_col: "race"
+      subgroup_value: "Black"
+    alphas:
+      - 0.0
+      - 0.1
+      - 0.2
+      - 0.3
+      - 0.4
+      - 0.5
+      - 0.6
+      - 0.7
+      - 0.8
+      - 0.9
+      - 1.0
+
+detectors:
+  mmd:
+    enabled: true
+    backend: "alibi"
+  lsdd:
+    enabled: true
+    backend: "alibi"
+  kl:
+    enabled: true
+    backend: "scipy"
+  embedding_drift:
+    enabled: true
+    backend: "sklearn"
+  evidently:
+    enabled: true
+    backend: "evidently"
+
+output:
+  results_dir: "results"
+  figures_dir: "results/figures"
+  save_scores: true
+  save_aggregated: true
