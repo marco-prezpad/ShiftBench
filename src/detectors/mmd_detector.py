@@ -6,6 +6,7 @@ Maximum Mean Discrepancy drift detector using Alibi Detect.
 Author: Marco Pérez Padilla
 Date:   10-08-2026
 """
+
 import numpy as np
 from alibi_detect.cd import MMDDrift
 from alibi_detect.utils.pytorch.kernels import GaussianRBF
@@ -18,18 +19,21 @@ from .factory import DetectorFactory
 class MMDDetector(BaseDetector):
     """Drift detector based on Maximum Mean Discrepancy."""
 
-    def __init__(self, p_val: float = 0.05):
+    def __init__(self, p_val: float = 0.05, device: str | None = None):
         self.p_val = p_val
+        self.device = device
         self._detector = None
 
     def fit(self, X_ref: np.ndarray) -> None:
-        self._detector = MMDDrift(
-            X_ref,
+        kwargs = dict(
             backend="pytorch",
             p_val=self.p_val,
             kernel=GaussianRBF,
             configure_kernel_from_x_ref=True,
         )
+        if self.device is not None:
+            kwargs["device"] = self.device
+        self._detector = MMDDrift(X_ref, **kwargs)
 
     def score(self, X_test: np.ndarray) -> float:
         preds = self._detector.predict(X_test, return_p_val=True)
