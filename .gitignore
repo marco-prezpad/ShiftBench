@@ -90,6 +90,7 @@ Thumbs.db
 
 # Custom: data, results, embeddings
 data/
+!src/data 
 results/
 embeddings/
 
