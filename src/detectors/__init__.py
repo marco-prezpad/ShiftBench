@@ -8,5 +8,6 @@ Date:   10-08-2026
 """
 
 from .base import BaseDetector
+from .factory import DetectorFactory
 
-__all__ = ["BaseDetector"]
+__all__ = ["BaseDetector", "DetectorFactory"]
