@@ -126,3 +126,15 @@ class TestGenerateAdultDemographicShift:
             X, y, subgroup_col="race", subgroup_value="Martian", alpha=1.0
         )
         assert len(X_test) == len(X)
+
+    def test_alpha_out_of_range_raises(self, adult_df):
+        X = adult_df.drop(columns=["income"])
+        y = adult_df["income"]
+        with pytest.raises(ValueError, match="alpha must be in"):
+            generate_adult_demographic_shift(
+                X, y, subgroup_col="race", subgroup_value="Black", alpha=1.5
+            )
+        with pytest.raises(ValueError, match="alpha must be in"):
+            generate_adult_demographic_shift(
+                X, y, subgroup_col="race", subgroup_value="Black", alpha=-0.1
+            )
