@@ -4,9 +4,10 @@
 
 experiment:
   random_state: 42
-  n_bootstrap_runs: 30
+  n_bootstrap_runs: 5 # 30
   test_size: 0.3
   significance_level: 0.05
+  max_kernel_ref_size: 1000
 
 datasets:
   adult:
@@ -20,15 +21,15 @@ datasets:
       subgroup_value: "Black"
     alphas:
       - 0.0
-      - 0.1
-      - 0.2
+      # - 0.1
+      # - 0.2
       - 0.3
-      - 0.4
-      - 0.5
+      # - 0.4
+      # - 0.5
       - 0.6
-      - 0.7
-      - 0.8
-      - 0.9
+      # - 0.7
+      # - 0.8
+      # - 0.9
       - 1.0
 
 detectors:

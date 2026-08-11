@@ -4,15 +4,19 @@ protocol.py
 Benchmark protocol to evaluate drift detectors on UCI Adult.
 
 Author: Marco Pérez Padilla
-Date:   10-08-2026
+Date:   11-08-2026
 """
 import json
+import logging
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
+from tqdm import tqdm
 
 from src.data.load import CATEGORICAL_COLS, load_adult
 from src.data.synthetic_shifts import generate_adult_demographic_shift
@@ -21,7 +25,6 @@ from src.evaluation.metrics import compute_detection_metrics
 from src.utils.io import ensure_dir
 from src.utils.logging import setup_logging
 
-# Registrar todos los detectores
 import src.detectors.mmd_detector  # noqa: F401
 import src.detectors.lsdd_detector  # noqa: F401
 import src.detectors.kl_detector  # noqa: F401
@@ -29,6 +32,20 @@ import src.detectors.embedding_drift_detector  # noqa: F401
 import src.detectors.evidently_detector  # noqa: F401
 
 logger = setup_logging()
+
+
+class TqdmHandler(logging.Handler):
+    """Logging handler that writes messages via tqdm.write()."""
+    def emit(self, record):
+        msg = self.format(record)
+        tqdm.write(msg)
+
+
+# Redirect Alibi Detect logs to tqdm
+alibi_logger = logging.getLogger("alibi_detect")
+alibi_logger.addHandler(TqdmHandler())
+alibi_logger.setLevel(logging.INFO)
+alibi_logger.propagate = False
 
 
 class BenchmarkProtocol:
@@ -45,6 +62,8 @@ class BenchmarkProtocol:
         alphas: list[float] | None = None,
         n_bootstrap: int = 30,
         significance_level: float = 0.05,
+        max_kernel_ref_size: int = 1000,
+        force: bool = False,
     ):
         self.data_path = Path(data_path)
         self.results_dir = Path(results_dir)
@@ -57,27 +76,52 @@ class BenchmarkProtocol:
         ]
         self.n_bootstrap = n_bootstrap
         self.significance_level = significance_level
+        self.max_kernel_ref_size = max_kernel_ref_size
+        self.force = force
         self.scores: dict[str, dict[float, list[float]]] = {}
         self._encoder: OneHotEncoder | None = None
+        self._checkpoint_path = self.results_dir / "scores_partial.json"
 
     def run(self) -> None:
         logger.info("Starting benchmark protocol...")
         ensure_dir(self.results_dir)
         ensure_dir(self.results_dir / "figures")
 
-        # 1. Cargar y dividir los datos
+        # Checkpoint
+        completed_alphas: set[float] = set()
+        if self._checkpoint_path.exists() and not self.force:
+            with open(self._checkpoint_path) as f:
+                self.scores = json.load(f)
+            first_detector = next(iter(self.scores.keys()), None)
+            if first_detector:
+                for alpha, sc in self.scores[first_detector].items():
+                    if len(sc) >= self.n_bootstrap:
+                        completed_alphas.add(float(alpha))
+            if completed_alphas:
+                logger.info(
+                    f"Resuming from checkpoint. {len(completed_alphas)} alpha(s) already done."
+                )
+        elif self.force:
+            logger.info("Force flag set – starting from scratch.")
+
+        remaining_alphas = [a for a in self.alphas if a not in completed_alphas]
+        if not remaining_alphas:
+            logger.info("All alphas already completed.")
+            return
+
+        # 1. Load and split the data
         df = load_adult(self.data_path)
         df_ref, df_pool = train_test_split(
             df, train_size=self.reference_frac, random_state=self.random_state
         )
         logger.info(f"Reference size: {len(df_ref)}, Pool size: {len(df_pool)}")
 
-        # 2. Preparar los datos sin la columna target
+        # 2. Prepare the data without target column
         X_ref_raw = df_ref.drop(columns=["income"])
         y_pool = df_pool["income"]
         X_pool_raw = df_pool.drop(columns=["income"])
 
-        # 3. Entrenar el codificador one-hot una sola vez
+        # 3. Train the one-hot encoder on the combined reference and pool data
         self._encoder = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
         self._encoder.fit(
             pd.concat([X_ref_raw[CATEGORICAL_COLS], X_pool_raw[CATEGORICAL_COLS]])
@@ -86,27 +130,30 @@ class BenchmarkProtocol:
         X_ref_num = self._encode_dataframe(X_ref_raw)
         X_pool_num = self._encode_dataframe(X_pool_raw)
 
-        # 4. Inicializar detectores
+        # 4. Initialize all detectors
         detectors = self._init_detectors(X_ref_num.shape)
 
-        # 5. Entrenar todos los detectores
+        # 5. Train all detectors on the reference data
+        rng = np.random.default_rng(self.random_state)
         for name, det in detectors.items():
-            if name == "evidently":
+            if name in ("mmd", "lsdd") and len(X_ref_num) > self.max_kernel_ref_size:
+                idx = rng.choice(len(X_ref_num), size=self.max_kernel_ref_size, replace=False)
+                det.fit(X_ref_num[idx])
+            elif name == "evidently":
                 det.fit(X_ref_raw)
             else:
                 det.fit(X_ref_num)
 
-        # 6. Bucle principal: alphas × bootstraps
-        for alpha in self.alphas:
-            logger.info(f"Running alpha={alpha}")
+        # 6. Main loop over alphas and bootstrap runs
+        for alpha in tqdm(remaining_alphas, desc="Alphas"):
+            tqdm.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} Running alpha={alpha}")
             for detector_name in detectors:
                 self.scores.setdefault(detector_name, {}).setdefault(alpha, [])
 
-            for run_id in range(self.n_bootstrap):
+            for run_id in tqdm(range(self.n_bootstrap), desc=f"  α={alpha}", leave=False):
                 seed = self.random_state + run_id
                 X_test_raw, _ = generate_adult_demographic_shift(
-                    X_pool_raw,
-                    y_pool,
+                    X_pool_raw, y_pool,
                     subgroup_col=self.subgroup_col,
                     subgroup_value=self.subgroup_value,
                     alpha=alpha,
@@ -121,35 +168,39 @@ class BenchmarkProtocol:
                         score = det.score(X_test_num)
                     self.scores[name][alpha].append(score)
 
-        # 7. Guardar scores crudos
+            with open(self._checkpoint_path, "w") as f:
+                json.dump(self.scores, f, indent=2)
+
+        # 7. Save final scores and compute metrics
         with open(self.results_dir / "scores.json", "w") as f:
             json.dump(self.scores, f, indent=2)
 
-        # 8. Calcular métricas
         metrics_df = compute_detection_metrics(
-            self.scores,
-            self.alphas,
-            self.n_bootstrap,
+            self.scores, self.alphas, self.n_bootstrap,
             threshold_percentile=(1 - self.significance_level) * 100,
         )
         metrics_df.to_csv(self.results_dir / "metrics.csv", index=False)
+
+        # Delete checkpoint after successful completion
+        if self._checkpoint_path.exists():
+            self._checkpoint_path.unlink()
 
         logger.info("Benchmark finished.")
         logger.info(f"Results saved to {self.results_dir}")
 
     def _encode_dataframe(self, df: pd.DataFrame) -> np.ndarray:
-        """Convierte un DataFrame en array numérico one-hot."""
+        """Turns a DataFrame into a numeric array using the fitted encoder."""
         num = df.select_dtypes(include=[np.number])
         cat_encoded = self._encoder.transform(df[CATEGORICAL_COLS])
         return np.hstack([num.values, cat_encoded])
 
     def _init_detectors(self, X_ref_num_shape: tuple) -> dict:
+        """Creates instances of all detectors"""
         names = ["mmd", "lsdd", "kl", "embedding", "evidently"]
         detectors = {}
         for name in names:
             kwargs = {}
-            # For detectors that may use GPU, force CPU if reference has >5000 samples
-            if name in ("mmd", "lsdd") and X_ref_num_shape[0] > 5000:
+            if name in ("mmd", "lsdd") and X_ref_num_shape[0] > self.max_kernel_ref_size:
                 kwargs["device"] = "cpu"
             detectors[name] = DetectorFactory.create(name, **kwargs)
         return detectors
