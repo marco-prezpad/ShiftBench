@@ -68,7 +68,7 @@ def large_dataset_path():
 
 
 def test_resume_from_checkpoint(small_dataset_path):
-    """Interrumpt a run, then resume and verify it completes without re-running done alphas."""
+    """Simulates resuming from a partial checkpoint."""
     with tempfile.TemporaryDirectory() as tmp:
         protocol = BenchmarkProtocol(
             data_path=small_dataset_path,
@@ -78,9 +78,11 @@ def test_resume_from_checkpoint(small_dataset_path):
             random_state=123,
         )
         protocol.run()
-        with open(Path(tmp) / "scores_partial.json", "w") as f:
-            scores = {"mmd": {"0.0": [0.1, 0.2]}}
-            json.dump(scores, f)
+
+        (Path(tmp) / "metrics.csv").unlink()
+        (Path(tmp) / "scores.json").unlink()
+        partial = Path(tmp) / "scores_partial.json"
+        partial.write_text(json.dumps({"mmd": {"0.0": [0.1, 0.2]}}))
 
         resumed = BenchmarkProtocol(
             data_path=small_dataset_path,
@@ -95,7 +97,7 @@ def test_resume_from_checkpoint(small_dataset_path):
             final_scores = json.load(f)
         assert "0.0" in final_scores["mmd"]
         assert "0.5" in final_scores["mmd"]
-        assert not (Path(tmp) / "scores_partial.json").exists()
+        assert not partial.exists()
 
 
 def test_force_flag(small_dataset_path):

@@ -37,7 +37,7 @@ class KLDetector(BaseDetector):
         m = len(X_test)
 
         tree_ref = KDTree(self._X_ref)
-        dist_ref, _ = tree_ref.query(X_test, k=self.n_neighbors + 1)
+        dist_ref, _ = tree_ref.query(X_test, k=self.n_neighbors)
         if dist_ref.ndim > 1:
             dist_ref = dist_ref[:, -1]
         dist_ref = np.maximum(dist_ref, 1e-12)
@@ -48,6 +48,5 @@ class KLDetector(BaseDetector):
             dist_test = dist_test[:, -1]
         dist_test = np.maximum(dist_test, 1e-12)
 
-        kl = d * np.mean(np.log(dist_ref / dist_test)) + np.log(m / (n - 1))
-
+        kl = d * np.mean(np.log(dist_ref / dist_test)) + np.log(n / (m - 1))
         return float(max(0.0, kl))

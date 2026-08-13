@@ -32,9 +32,17 @@ def main() -> None:
 
     metrics = pd.read_csv(metrics_path)
     with open(scores_path) as f:
-        scores = json.load(f)
+        raw_scores = json.load(f)
+    scores = {
+        det: {float(a): v for a, v in alpha_dict.items()}
+        for det, alpha_dict in raw_scores.items()
+    }
 
-    plot_all(metrics, scores, figures_dir)
+    from src.utils.io import load_yaml
+    config = load_yaml("configs/config.yaml")
+    sig_level = config["experiment"]["significance_level"]
+
+    plot_all(metrics, scores, figures_dir, significance_level=sig_level)
     print(f"Figures saved to {figures_dir}")
 
 

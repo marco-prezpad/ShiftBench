@@ -11,6 +11,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+import torch
 
 import numpy as np
 import pandas as pd
@@ -35,13 +36,10 @@ logger = setup_logging()
 
 
 class TqdmHandler(logging.Handler):
-    """Logging handler that writes messages via tqdm.write()."""
     def emit(self, record):
-        msg = self.format(record)
-        tqdm.write(msg)
+        tqdm.write(self.format(record))
 
 
-# Redirect Alibi Detect logs to tqdm
 alibi_logger = logging.getLogger("alibi_detect")
 alibi_logger.addHandler(TqdmHandler())
 alibi_logger.setLevel(logging.INFO)
@@ -49,8 +47,6 @@ alibi_logger.propagate = False
 
 
 class BenchmarkProtocol:
-    """Run the full distribution shift benchmark on UCI Adult."""
-
     def __init__(
         self,
         data_path: str | Path = "data/adult.data",
@@ -87,11 +83,21 @@ class BenchmarkProtocol:
         ensure_dir(self.results_dir)
         ensure_dir(self.results_dir / "figures")
 
+        # Early exit
+        final_metrics = self.results_dir / "metrics.csv"
+        if final_metrics.exists() and not self.force:
+            logger.info("metrics.csv already exists. Skipping (use --force to re‑run).")
+            return
+        
         # Checkpoint
         completed_alphas: set[float] = set()
         if self._checkpoint_path.exists() and not self.force:
             with open(self._checkpoint_path) as f:
-                self.scores = json.load(f)
+                raw = json.load(f)
+            self.scores = {
+                det: {float(a): v for a, v in alpha_dict.items()}
+                for det, alpha_dict in raw.items()
+            }
             first_detector = next(iter(self.scores.keys()), None)
             if first_detector:
                 for alpha, sc in self.scores[first_detector].items():
@@ -116,12 +122,11 @@ class BenchmarkProtocol:
         )
         logger.info(f"Reference size: {len(df_ref)}, Pool size: {len(df_pool)}")
 
-        # 2. Prepare the data without target column
         X_ref_raw = df_ref.drop(columns=["income"])
         y_pool = df_pool["income"]
         X_pool_raw = df_pool.drop(columns=["income"])
 
-        # 3. Train the one-hot encoder on the combined reference and pool data
+        # 2. One‑hot encoder
         self._encoder = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
         self._encoder.fit(
             pd.concat([X_ref_raw[CATEGORICAL_COLS], X_pool_raw[CATEGORICAL_COLS]])
@@ -130,21 +135,41 @@ class BenchmarkProtocol:
         X_ref_num = self._encode_dataframe(X_ref_raw)
         X_pool_num = self._encode_dataframe(X_pool_raw)
 
-        # 4. Initialize all detectors
+        # 3. Initialize detectors
         detectors = self._init_detectors(X_ref_num.shape)
 
-        # 5. Train all detectors on the reference data
+        # 4. Train detectors
         rng = np.random.default_rng(self.random_state)
         for name, det in detectors.items():
-            if name in ("mmd", "lsdd") and len(X_ref_num) > self.max_kernel_ref_size:
-                idx = rng.choice(len(X_ref_num), size=self.max_kernel_ref_size, replace=False)
-                det.fit(X_ref_num[idx])
-            elif name == "evidently":
-                det.fit(X_ref_raw)
-            else:
-                det.fit(X_ref_num)
+            try:
+                if name in ("mmd", "lsdd"):
+                    if len(X_ref_num) > self.max_kernel_ref_size:
+                        idx = rng.choice(len(X_ref_num), size=self.max_kernel_ref_size, replace=False)
+                        det.fit(X_ref_num[idx])
+                    else:
+                        det.fit(X_ref_num)
+                elif name == "evidently":
+                    det.fit(X_ref_raw)
+                else:
+                    det.fit(X_ref_num)
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    logger.warning(f"GPU OOM for {name}, falling back to CPU")
+                    detectors[name] = DetectorFactory.create(name, device="cpu")
+                    if name in ("mmd", "lsdd"):
+                        if len(X_ref_num) > self.max_kernel_ref_size:
+                            idx = rng.choice(len(X_ref_num), size=self.max_kernel_ref_size, replace=False)
+                            detectors[name].fit(X_ref_num[idx])
+                        else:
+                            detectors[name].fit(X_ref_num)
+                    elif name == "evidently":
+                        detectors[name].fit(X_ref_raw)
+                    else:
+                        detectors[name].fit(X_ref_num)
+                else:
+                    raise
 
-        # 6. Main loop over alphas and bootstrap runs
+        # 5. Evaluation loop
         for alpha in tqdm(remaining_alphas, desc="Alphas"):
             tqdm.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} Running alpha={alpha}")
             for detector_name in detectors:
@@ -162,26 +187,64 @@ class BenchmarkProtocol:
                 X_test_num = self._encode_dataframe(X_test_raw)
 
                 for name, det in detectors.items():
-                    if name == "evidently":
-                        score = det.score(X_test_raw)
-                    else:
-                        score = det.score(X_test_num)
+                    try:
+                        if name == "evidently":
+                            score = det.score(X_test_raw)
+                        else:
+                            score = det.score(X_test_num)
+                    except RuntimeError as e:
+                        if "out of memory" in str(e).lower():
+                            logger.warning(f"GPU OOM during score for {name}. Switching to CPU for this detector.")
+                            torch.cuda.empty_cache()
+                            detectors[name] = DetectorFactory.create(name, device="cpu")
+                            if name in ("mmd", "lsdd") and len(X_ref_num) > self.max_kernel_ref_size:
+                                idx = rng.choice(len(X_ref_num), size=self.max_kernel_ref_size, replace=False)
+                                detectors[name].fit(X_ref_num[idx])
+                            elif name == "evidently":
+                                detectors[name].fit(X_ref_raw)
+                            else:
+                                detectors[name].fit(X_ref_num)
+                            if name == "evidently":
+                                score = detectors[name].score(X_test_raw)
+                            else:
+                                score = detectors[name].score(X_test_num)
+                        else:
+                            raise
                     self.scores[name][alpha].append(score)
+
+            alpha_dir = self.results_dir / "alpha_scores"
+            alpha_dir.mkdir(parents=True, exist_ok=True)
+            alpha_file = alpha_dir / f"alpha_{alpha:.2f}.json"
+            alpha_scores = {det: {alpha: self.scores[det][alpha]} for det in self.scores}
+            with open(alpha_file, "w") as f:
+                json.dump(alpha_scores, f, indent=2)
+
+            first_det = next(iter(self.scores), None)
+            if first_det and 0.0 in self.scores[first_det]:
+                completed_alphas = [a for a in self.alphas if a in self.scores[first_det]]
+                partial_metrics = compute_detection_metrics(
+                    self.scores,
+                    completed_alphas,
+                    self.n_bootstrap,
+                    threshold_percentile=(1 - self.significance_level) * 100,
+                )
+                partial_metrics.to_csv(self.results_dir / "metrics_partial.csv", index=False)
 
             with open(self._checkpoint_path, "w") as f:
                 json.dump(self.scores, f, indent=2)
 
-        # 7. Save final scores and compute metrics
+        # 6. Save final scores and compute metrics
         with open(self.results_dir / "scores.json", "w") as f:
             json.dump(self.scores, f, indent=2)
 
         metrics_df = compute_detection_metrics(
-            self.scores, self.alphas, self.n_bootstrap,
+            self.scores,
+            self.alphas,
+            self.n_bootstrap,
             threshold_percentile=(1 - self.significance_level) * 100,
         )
         metrics_df.to_csv(self.results_dir / "metrics.csv", index=False)
 
-        # Delete checkpoint after successful completion
         if self._checkpoint_path.exists():
             self._checkpoint_path.unlink()
 
@@ -189,18 +252,18 @@ class BenchmarkProtocol:
         logger.info(f"Results saved to {self.results_dir}")
 
     def _encode_dataframe(self, df: pd.DataFrame) -> np.ndarray:
-        """Turns a DataFrame into a numeric array using the fitted encoder."""
         num = df.select_dtypes(include=[np.number])
         cat_encoded = self._encoder.transform(df[CATEGORICAL_COLS])
-        return np.hstack([num.values, cat_encoded])
+        return np.hstack([num.values, cat_encoded]).astype(np.float32)
 
     def _init_detectors(self, X_ref_num_shape: tuple) -> dict:
-        """Creates instances of all detectors"""
         names = ["mmd", "lsdd", "kl", "embedding", "evidently"]
         detectors = {}
         for name in names:
             kwargs = {}
-            if name in ("mmd", "lsdd") and X_ref_num_shape[0] > self.max_kernel_ref_size:
+            if name in ("mmd", "lsdd") and torch.cuda.is_available():
+                kwargs["device"] = "cuda"  
+            elif name in ("mmd", "lsdd"):
                 kwargs["device"] = "cpu"
             detectors[name] = DetectorFactory.create(name, **kwargs)
         return detectors

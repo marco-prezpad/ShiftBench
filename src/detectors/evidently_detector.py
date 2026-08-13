@@ -4,9 +4,8 @@ evidently_detector.py
 Drift detection using Evidently AI.
 
 Author: Marco Pérez Padilla
-Date:   10-08-2026
+Date:   12-08-2026
 """
-
 import numpy as np
 import pandas as pd
 from evidently import DataDefinition, Dataset, Report
@@ -23,25 +22,35 @@ class EvidentlyDetector(BaseDetector):
     def __init__(self):
         self._ref_dataset: Dataset | None = None
 
-    @staticmethod
-    def _to_dataset(X: np.ndarray | pd.DataFrame) -> Dataset:
-        if not isinstance(X, pd.DataFrame):
-            X = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
-
-        categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
-        numerical_cols = X.select_dtypes(include="number").columns.tolist()
-        definition = DataDefinition(
-            numerical_columns=numerical_cols,
-            categorical_columns=categorical_cols,
-        )
-        return Dataset.from_pandas(X, data_definition=definition)
-
     def fit(self, X_ref: np.ndarray | pd.DataFrame) -> None:
-        self._ref_dataset = self._to_dataset(X_ref)
+        """Fit the detector on reference data. Accepts both numpy arrays and DataFrames."""
+        if isinstance(X_ref, np.ndarray):
+            cols = [f"f{i}" for i in range(X_ref.shape[1])]
+            df = pd.DataFrame(X_ref, columns=cols)
+        else:
+            df = X_ref
+        self._ref_dataset = self._to_dataset(df)
+
+    @staticmethod
+    def _to_dataset(df: pd.DataFrame) -> Dataset:
+        """Create an Evidently Dataset with explicit column types."""
+        num_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        cat_cols = df.select_dtypes(exclude=["number"]).columns.tolist()
+        definition = DataDefinition(
+            numerical_columns=num_cols,
+            categorical_columns=cat_cols,
+        )
+        return Dataset.from_pandas(df, data_definition=definition)
 
     def score(self, X_test: np.ndarray | pd.DataFrame) -> float:
-        cur_dataset = self._to_dataset(X_test)
+        """Compute drift score. Accepts both numpy arrays and DataFrames."""
+        if isinstance(X_test, np.ndarray):
+            cols = [f"f{i}" for i in range(X_test.shape[1])]
+            df = pd.DataFrame(X_test, columns=cols)
+        else:
+            df = X_test
 
+        cur_dataset = self._to_dataset(df)
         report = Report(metrics=[DriftedColumnsCount()])
         my_eval = report.run(current_data=cur_dataset, reference_data=self._ref_dataset)
 

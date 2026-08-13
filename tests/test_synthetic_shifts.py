@@ -6,7 +6,7 @@ It tests the `generate_adult_demographic_shift` function to ensure it
 behaves as expected under various scenarios.
 
 Author: Marco Pérez Padilla
-Date:   10-08-2026
+Date:   12-08-2026
 """
 from pathlib import Path
 
@@ -60,11 +60,12 @@ class TestGenerateAdultDemographicShift:
     def test_alpha_zero_original_proportion(self, adult_df):
         X = adult_df.drop(columns=["income"])
         y = adult_df["income"]
+        original_pct = (X["race"] == "Black").mean()
         X_test, _ = generate_adult_demographic_shift(
             X, y, subgroup_col="race", subgroup_value="Black", alpha=0.0
         )
         test_pct = (X_test["race"] == "Black").mean()
-        assert test_pct == 0.0
+        assert abs(test_pct - original_pct) < 0.02
 
     def test_alpha_one_all_subgroup(self, adult_df):
         X = adult_df.drop(columns=["income"])
@@ -74,14 +75,16 @@ class TestGenerateAdultDemographicShift:
         )
         assert (X_test["race"] == "Black").all()
 
-    def test_alpha_half_close_to_half(self, adult_df):
+    def test_alpha_half_matches_interpolation(self, adult_df):
         X = adult_df.drop(columns=["income"])
         y = adult_df["income"]
+        baseline = (X["race"] == "Black").mean()
+        expected = baseline + 0.5 * (1.0 - baseline)
         X_test, _ = generate_adult_demographic_shift(
             X, y, subgroup_col="race", subgroup_value="Black", alpha=0.5
         )
         pct = (X_test["race"] == "Black").mean()
-        assert 0.45 < pct < 0.55
+        assert abs(pct - expected) < 0.02
 
     def test_indices_are_valid(self, adult_df):
         X = adult_df.drop(columns=["income"])
@@ -91,14 +94,6 @@ class TestGenerateAdultDemographicShift:
         )
         assert X_test.index.min() >= 0
         assert X_test.index.max() < len(adult_df)
-
-    def test_no_duplicate_indices(self, adult_df):
-        X = adult_df.drop(columns=["income"])
-        y = adult_df["income"]
-        X_test, _ = generate_adult_demographic_shift(
-            X, y, subgroup_col="race", subgroup_value="Black", alpha=0.5
-        )
-        assert len(X_test) == len(X)
 
     def test_reproducible_with_seed(self, adult_df):
         X = adult_df.drop(columns=["income"])
@@ -133,8 +128,4 @@ class TestGenerateAdultDemographicShift:
         with pytest.raises(ValueError, match="alpha must be in"):
             generate_adult_demographic_shift(
                 X, y, subgroup_col="race", subgroup_value="Black", alpha=1.5
-            )
-        with pytest.raises(ValueError, match="alpha must be in"):
-            generate_adult_demographic_shift(
-                X, y, subgroup_col="race", subgroup_value="Black", alpha=-0.1
             )

@@ -4,9 +4,8 @@ synthetic_shifts.py
 Generate synthetic distribution shifts of controlled intensity.
 
 Author: Marco Pérez Padilla
-Date:   10-08-2026
+Date:   12-08-2026
 """
-
 import numpy as np
 import pandas as pd
 
@@ -19,47 +18,37 @@ def generate_adult_demographic_shift(
     alpha: float,
     random_state: int = 42,
 ) -> tuple[pd.DataFrame, pd.Series]:
-    """Generate a test set with controlled proportion of a demographic subgroup.
+    """Generate a test set with controlled shift intensity for a demographic subgroup.
 
-    The output has the same number of rows as the input. When the subgroup
-    is smaller than alpha * len(X), sampling with replacement is used.
+    alpha = 0.0 -> baseline (original) subgroup proportion (no shift).
+    alpha = 1.0 -> 100% of test samples belong to the subgroup (maximum shift).
+    Intermediate alphas linearly interpolate the target proportion between
+    baseline and 1.0.
 
-    Args:
-        X: Feature DataFrame.
-        y: Target Series.
-        subgroup_col: Column name for the demographic feature.
-        subgroup_value: Value of the subgroup to oversample.
-        alpha: Proportion of the subgroup in the output (0.0 to 1.0).
-        random_state: Seed for reproducibility.
-
-    Returns:
-        Tuple of (X_test, y_test) with the same shape as input.
+    If subgroup_value is not found, returns a bootstrap sample of the full pool.
     """
     if not 0.0 <= alpha <= 1.0:
         raise ValueError(f"alpha must be in [0, 1], got {alpha}")
 
     total_size = len(X)
-    n_subgroup = int(round(alpha * total_size))
-    n_others = total_size - n_subgroup
-
     mask = X[subgroup_col] == subgroup_value
     idx_subgroup = X.index[mask].values
     idx_others = X.index[~mask].values
 
+    if len(idx_subgroup) == 0:
+        rng = np.random.default_rng(random_state)
+        idx = rng.choice(X.index, size=total_size, replace=True)
+        return X.loc[idx].copy(), y.loc[idx].copy()
+
+    baseline_prop = mask.mean()
+    target_prop = baseline_prop + alpha * (1.0 - baseline_prop)
+    n_subgroup = int(round(target_prop * total_size))
+    n_others = total_size - n_subgroup
+
     rng = np.random.default_rng(random_state)
 
-    if n_subgroup > 0 and len(idx_subgroup) > 0:
-        chosen_sub = rng.choice(idx_subgroup, size=n_subgroup, replace=True)
-    elif n_subgroup > 0 and len(idx_subgroup) == 0:
-        chosen_sub = np.array([], dtype=int)
-        n_others = total_size
-    else:
-        chosen_sub = np.array([], dtype=int)
-
-    if n_others > 0 and len(idx_others) > 0:
-        chosen_others = rng.choice(idx_others, size=n_others, replace=True)
-    else:
-        chosen_others = np.array([], dtype=int)
+    chosen_sub = rng.choice(idx_subgroup, size=n_subgroup, replace=True)
+    chosen_others = rng.choice(idx_others, size=n_others, replace=True)
 
     test_idx = np.concatenate([chosen_sub, chosen_others])
     rng.shuffle(test_idx)

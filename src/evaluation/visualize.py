@@ -10,29 +10,47 @@ Date:   11-08-2026
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 
 sns.set_theme(style="whitegrid")
+
+DETECTOR_STYLES = {
+    "mmd": {"color": "steelblue", "marker": "o", "linestyle": "-"},
+    "lsdd": {"color": "orange", "marker": "s", "linestyle": "--"},
+    "kl": {"color": "green", "marker": "^", "linestyle": "-."},
+    "embedding": {"color": "red", "marker": "D", "linestyle": ":"},
+    "evidently": {"color": "purple", "marker": "v", "linestyle": "-"},
+}
 
 
 def plot_all(
     metrics: pd.DataFrame,
     scores: dict,
     figures_dir: Path,
+    significance_level: float = 0.05,
 ) -> None:
     """Generate all standard figures for the benchmark."""
     plot_tpr_vs_alpha(metrics, figures_dir)
     plot_auc_tpr_bars(metrics, figures_dir)
     plot_score_distribution(scores, figures_dir)
+    plot_fpr_calibration(metrics, significance_level, figures_dir)
 
 
 def plot_tpr_vs_alpha(metrics: pd.DataFrame, figures_dir: Path) -> None:
     """Plot TPR vs alpha for each detector."""
     plt.figure(figsize=(8, 5))
     for detector in metrics["detector"].unique():
-        subset = metrics[metrics["detector"] == detector]
-        plt.plot(subset["alpha"], subset["TPR"], marker="o", label=detector)
+        subset = metrics[metrics["detector"] == detector].sort_values("alpha")
+        style = DETECTOR_STYLES.get(detector, {})
+        plt.plot(
+            subset["alpha"], subset["TPR"],
+            label=detector,
+            **style,
+            linewidth=2,
+            markersize=6,
+        )
     plt.xlabel("Alpha (shift intensity)")
     plt.ylabel("TPR (sensitivity)")
     plt.title("Detection sensitivity vs shift intensity")
@@ -68,4 +86,25 @@ def plot_score_distribution(scores: dict, figures_dir: Path) -> None:
     plt.title("Score distribution under H0 (alpha=0)")
     plt.tight_layout()
     plt.savefig(figures_dir / "h0_scores.png", dpi=150)
+    plt.close()
+
+
+def plot_fpr_calibration(
+    metrics: pd.DataFrame,
+    significance_level: float,
+    figures_dir: Path,
+) -> None:
+    """Empirical FPR vs nominal significance level."""
+    fpr_h0 = metrics[metrics["alpha"] == 0.0][["detector", "FPR"]].copy()
+    if fpr_h0.empty:
+        return
+    plt.figure(figsize=(6, 4))
+    sns.barplot(data=fpr_h0, x="detector", y="FPR", hue="detector", palette="Set2", legend=False)
+    plt.axhline(significance_level, color="red", linestyle="--",
+                label=f"Nominal α={significance_level}")
+    plt.title("Empirical FPR under H0 (alpha=0)")
+    plt.ylabel("False Positive Rate")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(figures_dir / "fpr_calibration.png", dpi=150)
     plt.close()
