@@ -24,7 +24,9 @@ from src.data.load import CATEGORICAL_COLS, load_adult, load_cifar10_embeddings
 from src.data.synthetic_shifts import (
     generate_adult_demographic_shift,
     generate_class_mixture_shift,
+    generate_synthetic_series,
 )
+
 from src.detectors.factory import DetectorFactory
 from src.evaluation.metrics import compute_detection_metrics
 from src.utils.io import ensure_dir
@@ -74,6 +76,8 @@ class BenchmarkProtocol:
         cifar_kl_n_components: int = 50,
         class_a: int = 0,
         class_b: int = 1,
+        series_n_samples: int = 1000,
+        series_length: int = 50,
     ):
         self.domain = domain
         self.data_path = Path(data_path)
@@ -95,6 +99,8 @@ class BenchmarkProtocol:
         self.cifar_kl_n_components = cifar_kl_n_components
         self.class_a = class_a
         self.class_b = class_b
+        self.series_n_samples = series_n_samples
+        self.series_length = series_length
         self.scores: dict[str, dict[float, list[float]]] = {}
         self._encoder: OneHotEncoder | None = None
         self._checkpoint_path = self.results_dir / "scores_partial.json"
@@ -186,6 +192,37 @@ class BenchmarkProtocol:
             self._encode_test = False
             return X_ref, X_pool
 
+        elif self.domain == "timeseries":
+            X_all, y_all = generate_synthetic_series(
+                n_samples=self.series_n_samples,
+                length=self.series_length,
+                random_state=self.random_state,
+            )
+
+            rng = np.random.default_rng(self.random_state)
+
+            idx_a_all = np.where(y_all == 0)[0]
+            ref_size = min(len(idx_a_all), self.max_kernel_ref_size)
+            ref_idx = rng.choice(idx_a_all, size=ref_size, replace=False)
+            X_ref = X_all[ref_idx].astype(np.float32)
+
+            X_pool = X_all.astype(np.float32)
+            y_pool = y_all
+
+            self._X_ref_evidently = X_ref
+            self._X_pool_evidently = X_pool
+
+            self._pca_kl = None
+            self._X_ref_kl = X_ref
+            self._X_pool_kl = X_pool
+
+            self._X_pool_for_shift = X_pool
+            self._y_pool = y_pool
+            self._shift_fn = generate_class_mixture_shift
+            self._shift_kwargs = {"class_a": 0, "class_b": 1}
+            self._encode_test = False
+            return X_ref, X_pool
+        
         else:
             raise ValueError(f"Unsupported domain: {self.domain}")
 
@@ -259,7 +296,7 @@ class BenchmarkProtocol:
         rng = np.random.default_rng(self.random_state)
         for name, det in detectors.items():
             try:
-                if name == "kl" and self.domain == "cifar10c":
+                if name == "kl" and self.domain in ("cifar10c", "timeseries"):
                     det.fit(self._X_ref_kl)
                 elif name in ("mmd", "lsdd"):
                     if len(X_ref_num) > self.max_kernel_ref_size:
@@ -277,7 +314,7 @@ class BenchmarkProtocol:
                 if "out of memory" in str(e).lower():
                     logger.warning(f"GPU OOM for {name}, falling back to CPU")
                     detectors[name] = DetectorFactory.create(name, device="cpu")
-                    if name == "kl" and self.domain == "cifar10c":
+                    if name == "kl" and self.domain in ("cifar10c", "timeseries"):
                         detectors[name].fit(self._X_ref_kl)
                     elif name in ("mmd", "lsdd"):
                         if len(X_ref_num) > self.max_kernel_ref_size:
@@ -310,16 +347,20 @@ class BenchmarkProtocol:
                     X_test_num = self._encode_dataframe(X_test_shifted)
                     X_test_evidently = X_test_shifted
                     X_test_kl = X_test_num
-                else:
+                elif self.domain == "cifar10c":
                     X_test_num = X_test_shifted.astype(np.float32)
                     X_test_evidently = X_test_shifted[:, :50]
                     X_test_kl = self._pca_kl.transform(X_test_shifted).astype(np.float32)
+                else:
+                    X_test_num = X_test_shifted.astype(np.float32)
+                    X_test_evidently = X_test_shifted
+                    X_test_kl = X_test_shifted.astype(np.float32)
 
                 for name, det in detectors.items():
                     try:
                         if name == "evidently":
                             score = det.score(X_test_evidently)
-                        elif name == "kl" and self.domain == "cifar10c":
+                        elif name == "kl" and self.domain in ("cifar10c", "timeseries"):
                             score = det.score(X_test_kl)
                         else:
                             score = det.score(X_test_num)
@@ -330,7 +371,7 @@ class BenchmarkProtocol:
                             )
                             torch.cuda.empty_cache()
                             detectors[name] = DetectorFactory.create(name, device="cpu")
-                            if name == "kl" and self.domain == "cifar10c":
+                            if name == "kl" and self.domain in ("cifar10c", "timeseries"):
                                 detectors[name].fit(self._X_ref_kl)
                             elif name in ("mmd", "lsdd"):
                                 if len(X_ref_num) > self.max_kernel_ref_size:
@@ -348,7 +389,7 @@ class BenchmarkProtocol:
                                 detectors[name].fit(X_ref_num)
                             if name == "evidently":
                                 score = detectors[name].score(X_test_evidently)
-                            elif name == "kl" and self.domain == "cifar10c":
+                            elif name == "kl" and self.domain in ("cifar10c", "timeseries"):
                                 score = detectors[name].score(X_test_kl)
                             else:
                                 score = detectors[name].score(X_test_num)

@@ -65,6 +65,29 @@ images:
     - 0.95
     - 1.0
 
+timeseries:
+  results_dir: "results/timeseries"
+  series_n_samples: 1000
+  series_length: 50
+  alphas:
+    - 0.0
+    - 0.02
+    - 0.05
+    - 0.08
+    - 0.1
+    - 0.15
+    - 0.2
+    - 0.25
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+
+
 detectors:
   mmd:
     enabled: true

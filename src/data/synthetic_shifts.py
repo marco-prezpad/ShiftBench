@@ -6,6 +6,7 @@ Generate synthetic distribution shifts of controlled intensity.
 Author: Marco Pérez Padilla
 Date:   12-08-2026
 """
+
 import numpy as np
 import pandas as pd
 
@@ -96,3 +97,46 @@ def generate_class_mixture_shift(
     rng.shuffle(test_idx)
 
     return X[test_idx].copy(), y[test_idx].copy()
+
+
+def generate_synthetic_series(
+    n_samples: int = 1000,
+    length: int = 50,
+    random_state: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate synthetic time series with two classes.
+
+    Class 0: sine wave with fixed frequency.
+    Class 1: square wave with same frequency.
+
+    Each sample is a vector of length `length`.
+
+    Returns:
+        X: array of shape (n_samples, length)
+        y: labels (0 or 1)
+    """
+    rng = np.random.default_rng(random_state)
+    t = np.linspace(0, 1, length)
+
+    X = []
+    y = []
+    half = n_samples // 2
+
+    for _ in range(half):
+        phase = rng.uniform(0, 2 * np.pi)
+        X.append(np.sin(2 * np.pi * 3 * t + phase))
+        y.append(0)
+
+        phase = rng.uniform(0, 2 * np.pi)
+        X.append(np.sign(np.sin(2 * np.pi * 3 * t + phase)))
+        y.append(1)
+
+    if n_samples % 2 == 1:
+        if rng.random() < 0.5:
+            X.append(np.sin(2 * np.pi * 3 * t + rng.uniform(0, 2 * np.pi)))
+            y.append(0)
+        else:
+            X.append(np.sign(np.sin(2 * np.pi * 3 * t + rng.uniform(0, 2 * np.pi))))
+            y.append(1)
+
+    return np.array(X, dtype=np.float32), np.array(y)
