@@ -2,32 +2,48 @@
 """
 generate_figures.py
 
-Generate all benchmark figures from results/metrics.csv and results/scores.json.
+Generate benchmark figures for a given domain.
 
 Usage:
-    python scripts/generate_figures.py
+    python scripts/generate_figures.py --domain adult|cifar10c
 
 Author: Marco Pérez Padilla
-Date:   11-08-2026
+Date:   13-08-2026
 """
-
+import argparse
 import json
 from pathlib import Path
 
 import pandas as pd
 
 from src.evaluation.visualize import plot_all
+from src.utils.io import load_yaml
+
+CONFIG_PATH = "configs/config.yaml"
 
 
 def main() -> None:
-    results_dir = Path("results")
+    parser = argparse.ArgumentParser(description="Generate ShiftBench figures.")
+    parser.add_argument("--domain", default="adult", choices=["adult", "cifar10c"])
+    args = parser.parse_args()
+
+    config = load_yaml(CONFIG_PATH)
+    exp = config["experiment"]
+
+    if args.domain == "adult":
+        results_dir = Path(config["datasets"]["adult"]["results_dir"])
+    elif args.domain == "cifar10c":
+        results_dir = Path(config["images"]["results_dir"])
+    else:
+        raise ValueError(f"Unsupported domain: {args.domain}")
+
     metrics_path = results_dir / "metrics.csv"
     scores_path = results_dir / "scores.json"
     figures_dir = results_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     if not metrics_path.exists() or not scores_path.exists():
-        print("No results found. Run the benchmark first (python scripts/run_experiments.py).")
+        print(f"No results found in {results_dir}. Run the benchmark first.")
         return
 
     metrics = pd.read_csv(metrics_path)
@@ -38,9 +54,7 @@ def main() -> None:
         for det, alpha_dict in raw_scores.items()
     }
 
-    from src.utils.io import load_yaml
-    config = load_yaml("configs/config.yaml")
-    sig_level = config["experiment"]["significance_level"]
+    sig_level = exp["significance_level"]
 
     plot_all(metrics, scores, figures_dir, significance_level=sig_level)
     print(f"Figures saved to {figures_dir}")
