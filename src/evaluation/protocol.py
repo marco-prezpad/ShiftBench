@@ -2,13 +2,15 @@
 protocol.py
 
 Generic benchmark protocol for ShiftBench.
-Supports domains: 'adult' (tabular) and 'cifar10c' (image embeddings).
+Supports domains: 'adult' (tabular), 'cifar10c' (image embeddings),
+'timeseries' (synthetic series), and 'text' (TF-IDF embeddings).
 
 Author: Marco Pérez Padilla
-Date:   16-08-2026
+Date:   19-08-2026
 """
 import json
 import logging
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +18,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.decomposition import PCA
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from tqdm import tqdm
@@ -26,7 +29,6 @@ from src.data.synthetic_shifts import (
     generate_class_mixture_shift,
     generate_synthetic_series,
 )
-
 from src.detectors.factory import DetectorFactory
 from src.evaluation.metrics import compute_detection_metrics
 from src.utils.io import ensure_dir
@@ -40,6 +42,10 @@ import src.detectors.embedding_drift_detector  # noqa: F401
 import src.detectors.evidently_detector  # noqa: F401
 
 logger = setup_logging()
+
+# Silenciar warnings repetitivos de Alibi y NumPy
+logging.getLogger("alibi_detect.utils.pytorch.distance").setLevel(logging.WARNING)
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 class TqdmHandler(logging.Handler):
@@ -78,6 +84,8 @@ class BenchmarkProtocol:
         class_b: int = 1,
         series_n_samples: int = 1000,
         series_length: int = 50,
+        text_test_size: int = 3000,
+        text_kl_n_components: int = 50,
     ):
         self.domain = domain
         self.data_path = Path(data_path)
@@ -101,6 +109,8 @@ class BenchmarkProtocol:
         self.class_b = class_b
         self.series_n_samples = series_n_samples
         self.series_length = series_length
+        self.text_test_size = text_test_size
+        self.text_kl_n_components = text_kl_n_components
         self.scores: dict[str, dict[float, list[float]]] = {}
         self._encoder: OneHotEncoder | None = None
         self._checkpoint_path = self.results_dir / "scores_partial.json"
@@ -117,7 +127,9 @@ class BenchmarkProtocol:
         self._X_ref_kl = None
         self._X_pool_kl = None
 
-
+    # ------------------------------------------------------------------
+    # Data preparation
+    # ------------------------------------------------------------------
     def _load_and_prepare_data(self):
         """Load and prepare reference/pool data for the selected domain."""
         if self.domain == "adult":
@@ -164,7 +176,6 @@ class BenchmarkProtocol:
             ref_size = min(len(idx_a_all), self.max_kernel_ref_size)
             ref_idx = rng.choice(idx_a_all, size=ref_size, replace=False)
             X_ref = X_filtered[ref_idx].astype(np.float32)
-            y_ref = y_filtered[ref_idx]
 
             total_pool = min(len(X_filtered), self.cifar_test_size)
             pool_idx = rng.choice(len(X_filtered), size=total_pool, replace=False)
@@ -222,7 +233,61 @@ class BenchmarkProtocol:
             self._shift_kwargs = {"class_a": 0, "class_b": 1}
             self._encode_test = False
             return X_ref, X_pool
-        
+
+        elif self.domain == "text":
+            emb_dir = Path(self.embeddings_dir)
+            X_train = np.load(emb_dir / "train_embeddings.npy")
+            y_train = np.load(emb_dir / "train_labels.npy")
+
+            # Eliminar columnas con varianza global casi nula
+            selector = VarianceThreshold(threshold=1e-8)
+            X_train = selector.fit_transform(X_train)
+
+            mask = (y_train == 0) | (y_train == 1)
+            X_filtered = X_train[mask]
+            y_filtered = y_train[mask]
+
+            rng = np.random.default_rng(self.random_state)
+
+            idx_a = np.where(y_filtered == 0)[0]
+            ref_size = min(len(idx_a), self.max_kernel_ref_size)
+            ref_idx = rng.choice(idx_a, size=ref_size, replace=False)
+            X_ref = X_filtered[ref_idx].astype(np.float32)
+
+            # Eliminar columnas constantes dentro de la referencia
+            ref_vars = X_ref.var(axis=0)
+            keep_cols = ref_vars > 1e-8
+            X_ref = X_ref[:, keep_cols]
+
+            # Aplicar el mismo filtro al pool antes de crear X_pool
+            # Nota: X_pool aún no existe, así que primero creamos el pool completo
+            # y luego filtramos columnas.
+            total_pool = min(len(X_filtered), self.text_test_size)
+            pool_idx = rng.choice(len(X_filtered), size=total_pool, replace=False)
+            X_pool = X_filtered[pool_idx].astype(np.float32)
+            y_pool = y_filtered[pool_idx]
+
+            # Aplicar el filtro de columnas de la referencia al pool
+            X_pool = X_pool[:, keep_cols]
+
+            self._X_ref_evidently = X_ref[:, :50]
+            self._X_pool_evidently = X_pool[:, :50]
+
+            self._pca_kl = PCA(
+                n_components=self.text_kl_n_components,
+                random_state=self.random_state,
+            )
+            self._pca_kl.fit(X_ref)
+            self._X_ref_kl = self._pca_kl.transform(X_ref).astype(np.float32)
+            self._X_pool_kl = self._pca_kl.transform(X_pool).astype(np.float32)
+
+            self._X_pool_for_shift = X_pool
+            self._y_pool = y_pool
+            self._shift_fn = generate_class_mixture_shift
+            self._shift_kwargs = {"class_a": 0, "class_b": 1}
+            self._encode_test = False
+            return X_ref, X_pool
+
         else:
             raise ValueError(f"Unsupported domain: {self.domain}")
 
@@ -238,7 +303,9 @@ class BenchmarkProtocol:
             X_pool, y_pool, alpha=alpha, random_state=seed, **self._shift_kwargs
         )
 
-
+    # ------------------------------------------------------------------
+    # Detector initialization
+    # ------------------------------------------------------------------
     def _init_detectors(self) -> dict:
         """Create detector instances with appropriate device."""
         names = ["mmd", "lsdd", "kl", "embedding", "evidently"]
@@ -247,22 +314,26 @@ class BenchmarkProtocol:
             kwargs = {}
             if name in ("mmd", "lsdd"):
                 kwargs["device"] = "cuda" if torch.cuda.is_available() else "cpu"
-            if name == "embedding" and self.domain == "cifar10c":
+            if name == "embedding" and self.domain in ("cifar10c", "text"):
                 kwargs["n_components"] = 64
             detectors[name] = DetectorFactory.create(name, **kwargs)
         return detectors
 
-
+    # ------------------------------------------------------------------
+    # Main execution
+    # ------------------------------------------------------------------
     def run(self) -> None:
         logger.info(f"Starting benchmark protocol for domain '{self.domain}'...")
         ensure_dir(self.results_dir)
         ensure_dir(self.results_dir / "figures")
 
+        # Early exit if final metrics already exist
         final_metrics = self.results_dir / "metrics.csv"
         if final_metrics.exists() and not self.force:
-            logger.info("metrics.csv already exists. Skipping (use --force to re‑run).")
+            logger.info("metrics.csv already exists. Skipping (use --force to re-run).")
             return
 
+        # Checkpoint / resume
         completed_alphas: set[float] = set()
         if self._checkpoint_path.exists() and not self.force:
             with open(self._checkpoint_path) as f:
@@ -288,15 +359,18 @@ class BenchmarkProtocol:
             logger.info("All alphas already completed.")
             return
 
+        # Load and prepare data
         X_ref_num, X_pool_num = self._load_and_prepare_data()
         logger.info(f"Reference shape: {X_ref_num.shape}, Pool shape: {X_pool_num.shape}")
 
+        # Initialize detectors
         detectors = self._init_detectors()
 
+        # Train detectors (with GPU fallback)
         rng = np.random.default_rng(self.random_state)
         for name, det in detectors.items():
             try:
-                if name == "kl" and self.domain in ("cifar10c", "timeseries"):
+                if name == "kl" and self.domain in ("cifar10c", "timeseries", "text"):
                     det.fit(self._X_ref_kl)
                 elif name in ("mmd", "lsdd"):
                     if len(X_ref_num) > self.max_kernel_ref_size:
@@ -314,7 +388,7 @@ class BenchmarkProtocol:
                 if "out of memory" in str(e).lower():
                     logger.warning(f"GPU OOM for {name}, falling back to CPU")
                     detectors[name] = DetectorFactory.create(name, device="cpu")
-                    if name == "kl" and self.domain in ("cifar10c", "timeseries"):
+                    if name == "kl" and self.domain in ("cifar10c", "timeseries", "text"):
                         detectors[name].fit(self._X_ref_kl)
                     elif name in ("mmd", "lsdd"):
                         if len(X_ref_num) > self.max_kernel_ref_size:
@@ -331,6 +405,7 @@ class BenchmarkProtocol:
                 else:
                     raise
 
+        # Evaluation loop
         for alpha in tqdm(remaining_alphas, desc="Alphas"):
             tqdm.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} Running alpha={alpha}")
             for detector_name in detectors:
@@ -351,7 +426,11 @@ class BenchmarkProtocol:
                     X_test_num = X_test_shifted.astype(np.float32)
                     X_test_evidently = X_test_shifted[:, :50]
                     X_test_kl = self._pca_kl.transform(X_test_shifted).astype(np.float32)
-                else:
+                elif self.domain == "text":
+                    X_test_num = X_test_shifted.astype(np.float32)
+                    X_test_evidently = X_test_shifted[:, :50]
+                    X_test_kl = self._pca_kl.transform(X_test_shifted).astype(np.float32)
+                else:  # timeseries
                     X_test_num = X_test_shifted.astype(np.float32)
                     X_test_evidently = X_test_shifted
                     X_test_kl = X_test_shifted.astype(np.float32)
@@ -360,7 +439,7 @@ class BenchmarkProtocol:
                     try:
                         if name == "evidently":
                             score = det.score(X_test_evidently)
-                        elif name == "kl" and self.domain in ("cifar10c", "timeseries"):
+                        elif name == "kl" and self.domain in ("cifar10c", "timeseries", "text"):
                             score = det.score(X_test_kl)
                         else:
                             score = det.score(X_test_num)
@@ -371,7 +450,8 @@ class BenchmarkProtocol:
                             )
                             torch.cuda.empty_cache()
                             detectors[name] = DetectorFactory.create(name, device="cpu")
-                            if name == "kl" and self.domain in ("cifar10c", "timeseries"):
+                            # Re-train on CPU
+                            if name == "kl" and self.domain in ("cifar10c", "timeseries", "text"):
                                 detectors[name].fit(self._X_ref_kl)
                             elif name in ("mmd", "lsdd"):
                                 if len(X_ref_num) > self.max_kernel_ref_size:
@@ -387,9 +467,10 @@ class BenchmarkProtocol:
                                 detectors[name].fit(self._X_ref_evidently)
                             else:
                                 detectors[name].fit(X_ref_num)
+                            # Re-evaluate
                             if name == "evidently":
                                 score = detectors[name].score(X_test_evidently)
-                            elif name == "kl" and self.domain in ("cifar10c", "timeseries"):
+                            elif name == "kl" and self.domain in ("cifar10c", "timeseries", "text"):
                                 score = detectors[name].score(X_test_kl)
                             else:
                                 score = detectors[name].score(X_test_num)
@@ -397,6 +478,7 @@ class BenchmarkProtocol:
                             raise
                     self.scores[name][alpha].append(score)
 
+            # Save per-alpha results
             alpha_dir = self.results_dir / "alpha_scores"
             alpha_dir.mkdir(parents=True, exist_ok=True)
             alpha_file = alpha_dir / f"alpha_{alpha:.2f}.json"
@@ -404,6 +486,7 @@ class BenchmarkProtocol:
             with open(alpha_file, "w") as f:
                 json.dump(alpha_scores, f, indent=2)
 
+            # Partial metrics
             first_det = next(iter(self.scores), None)
             if first_det and 0.0 in self.scores[first_det]:
                 completed = [a for a in self.alphas if a in self.scores[first_det]]
@@ -415,9 +498,11 @@ class BenchmarkProtocol:
                 )
                 partial_metrics.to_csv(self.results_dir / "metrics_partial.csv", index=False)
 
+            # Global checkpoint
             with open(self._checkpoint_path, "w") as f:
                 json.dump(self.scores, f, indent=2)
 
+        # Save final results
         with open(self.results_dir / "scores.json", "w") as f:
             json.dump(self.scores, f, indent=2)
 

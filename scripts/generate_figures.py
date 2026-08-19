@@ -24,7 +24,7 @@ CONFIG_PATH = "configs/config.yaml"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate ShiftBench figures.")
-    parser.add_argument("--domain", default="adult", choices=["adult", "cifar10c", "timeseries"])
+    parser.add_argument("--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"])
     args = parser.parse_args()
 
     config = load_yaml(CONFIG_PATH)
@@ -36,6 +36,8 @@ def main() -> None:
         results_dir = Path(config["images"]["results_dir"])
     elif args.domain == "timeseries":
         results_dir = Path(config["timeseries"]["results_dir"])
+    elif args.domain == "text":
+        results_dir = Path(config["text"]["results_dir"])
     else:
         raise ValueError(f"Unsupported domain: {args.domain}")
 

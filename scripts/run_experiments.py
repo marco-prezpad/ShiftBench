@@ -21,7 +21,7 @@ CONFIG_PATH = "configs/config.yaml"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ShiftBench benchmark.")
-    parser.add_argument("--domain", default="adult", choices=["adult", "cifar10c", "timeseries"])
+    parser.add_argument("--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"])
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
@@ -66,6 +66,20 @@ def main() -> None:
             series_n_samples=ts.get("series_n_samples", 1000),
             series_length=ts.get("series_length", 50),
             alphas=ts.get("alphas", [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
+            n_bootstrap=exp["n_bootstrap_runs"],
+            significance_level=exp["significance_level"],
+            max_kernel_ref_size=exp.get("max_kernel_ref_size", 1000),
+            force=args.force,
+        )
+    elif args.domain == "text":
+        tx = config.get("text", {})
+        protocol = BenchmarkProtocol(
+            domain="text",
+            embeddings_dir=tx.get("embeddings_dir", "embeddings/newsgroups"),
+            results_dir=tx.get("results_dir", "results/text"),
+            text_test_size=tx.get("text_test_size", 3000),
+            text_kl_n_components=tx.get("text_kl_n_components", 50),
+            alphas=tx.get("alphas", [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
             n_bootstrap=exp["n_bootstrap_runs"],
             significance_level=exp["significance_level"],
             max_kernel_ref_size=exp.get("max_kernel_ref_size", 1000),
