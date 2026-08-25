@@ -20,6 +20,6 @@ def load_yaml(path: str | Path) -> dict:
 
 def ensure_dir(path: str | Path) -> Path:
     """Create directory if it doesn't exist and return Path."""
-    p = Path(path)
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    directory = Path(path)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory

@@ -72,7 +72,7 @@ class TestComputeDetectionMetrics:
             }
             df = compute_detection_metrics(scores, alphas=[0.0, 0.5], n_bootstrap=100)
             tnr = df.loc[df["detector"] == "good", "TNR"].values[0]
-            assert tnr >= 0.85  
+            assert tnr >= 0.85
 
 
 class TestComputeAucTpr:
@@ -91,12 +91,12 @@ class TestComputeAucTpr:
 
 class TestComputeDetectionMetricsEdgeCases:
     def test_missing_h0_scores(self):
-        scores = {"det": {0.5: [0.8, 0.9]}}  
+        scores = {"det": {0.5: [0.8, 0.9]}}
         df = compute_detection_metrics(scores, alphas=[0.0, 0.5], n_bootstrap=2)
         assert df.empty
 
     def test_empty_scores_for_alpha(self):
-        scores = {"det": {0.0: [0.1, 0.2], 0.5: []}}  
+        scores = {"det": {0.0: [0.1, 0.2], 0.5: []}}
         df = compute_detection_metrics(scores, alphas=[0.0, 0.5], n_bootstrap=2)
         assert len(df) == 1
 

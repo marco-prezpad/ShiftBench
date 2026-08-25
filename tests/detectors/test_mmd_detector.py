@@ -26,7 +26,7 @@ class TestMMDDetector:
         detector.fit(X_ref)
         score = detector.score(X_test)
         assert isinstance(score, float)
-        assert 0.0 <= score < 0.8   
+        assert 0.0 <= score < 0.8
 
     def test_drift_high_score(self):
         detector = DetectorFactory.create("mmd")

@@ -45,6 +45,6 @@ class TestEmbeddingDriftDetector:
 
     def test_n_components_clamped(self):
         detector = DetectorFactory.create("embedding", n_components=50)
-        X_ref = np.random.randn(100, 5)  
+        X_ref = np.random.randn(100, 5)
         detector.fit(X_ref)
         assert detector._pca.n_components_ == 5

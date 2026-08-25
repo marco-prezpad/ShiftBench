@@ -1,7 +1,7 @@
 """
-test_lsdd_detector.py
+test_kl_detector.py
 
-Tests for LSDDDetector.
+Tests for KLDetector.
 It checks that the detector can be created, fitted, and scored correctly.
 
 Author: Marco Pérez Padilla
@@ -15,23 +15,23 @@ from src.detectors.factory import DetectorFactory
 
 
 @pytest.fixture(autouse=True)
-def _register_lsdd():
-    import src.detectors.lsdd_detector  # noqa: F401
+def _register_kl():
+    import src.detectors.kl_detector  # noqa: F401
 
 
-class TestLSDDDetector:
+class TestKLDetector:
     def test_no_drift_low_score(self):
-        detector = DetectorFactory.create("lsdd")
+        detector = DetectorFactory.create("kl")
         X_ref = np.random.randn(200, 5)
         X_test = np.random.randn(200, 5)
 
         detector.fit(X_ref)
         score = detector.score(X_test)
         assert isinstance(score, float)
-        assert 0.0 <= score <= 1.0
+        assert score >= 0.0
 
     def test_drift_high_score(self):
-        detector = DetectorFactory.create("lsdd")
+        detector = DetectorFactory.create("kl")
         X_ref = np.random.randn(200, 5)
         X_test = np.random.randn(200, 5) + 2.0
 

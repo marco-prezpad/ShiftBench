@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from src.data.load import load_adult
+from src.data.loaders.adult_loader import load_adult
 from src.evaluation.protocol import BenchmarkProtocol
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
 @pytest.fixture
@@ -149,7 +149,7 @@ def test_max_kernel_ref_size(large_dataset_path):
             n_bootstrap=1,
             alphas=[0.0, 0.5],
             random_state=123,
-            max_kernel_ref_size=200, 
+            max_kernel_ref_size=200,
         )
         protocol.run()
         assert (Path(tmp) / "scores.json").exists()

@@ -24,14 +24,14 @@ class LSDDDetector(BaseDetector):
         self._detector = None
 
     def fit(self, X_ref: np.ndarray) -> None:
-        kwargs = dict(
+        detector_kwargs = dict(
             backend="pytorch",
             p_val=self.p_val,
         )
         if self.device is not None:
-            kwargs["device"] = self.device
-        self._detector = LSDDDrift(X_ref, **kwargs)
+            detector_kwargs["device"] = self.device
+        self._detector = LSDDDrift(X_ref, **detector_kwargs)
 
     def score(self, X_test: np.ndarray) -> float:
-        preds = self._detector.predict(X_test, return_p_val=True)
-        return float(1.0 - preds["data"]["p_val"])
+        prediction = self._detector.predict(X_test, return_p_val=True)
+        return float(1.0 - prediction["data"]["p_val"])

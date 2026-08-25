@@ -1,4 +1,13 @@
-# Detector hyperparameters
+# Detector hyperparameters.
+#
+# NOTE (refactor, 19-08-2026): these keys are only wired in on an OPT-IN
+# basis via `--use-detector-params` in scripts/run_experiments.py. Several
+# keys here (mmd/lsdd's kernel, sigma, n_permutations, batch_size;
+# embedding_drift's method/test; evidently's test/threshold) are not
+# accepted by the current detector constructors and are silently ignored
+# by DetectorFactory.create_from_config -- wiring them for real would
+# require extending those constructors, which would change benchmark
+# results and was out of scope for this refactor. See README_REFACTOR.md.
 # Author: Marco Pérez Padilla
 # Date:   02-08-2026
 

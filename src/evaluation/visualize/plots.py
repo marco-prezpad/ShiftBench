@@ -1,7 +1,7 @@
 """
-visualize.py
+plots.py
 
-Visualization functions for ShiftBench results.
+Figure-generation functions for ShiftBench results.
 
 Author: Marco Pérez Padilla
 Date:   11-08-2026
@@ -10,19 +10,12 @@ Date:   11-08-2026
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 
-sns.set_theme(style="whitegrid")
+from .detector_styles import DETECTOR_STYLES
 
-DETECTOR_STYLES = {
-    "mmd": {"color": "steelblue", "marker": "o", "linestyle": "-"},
-    "lsdd": {"color": "orange", "marker": "s", "linestyle": "--"},
-    "kl": {"color": "green", "marker": "^", "linestyle": "-."},
-    "embedding": {"color": "red", "marker": "D", "linestyle": ":"},
-    "evidently": {"color": "purple", "marker": "v", "linestyle": "-"},
-}
+sns.set_theme(style="whitegrid")
 
 
 def plot_all(
@@ -41,12 +34,13 @@ def plot_all(
 def plot_tpr_vs_alpha(metrics: pd.DataFrame, figures_dir: Path) -> None:
     """Plot TPR vs alpha for each detector."""
     plt.figure(figsize=(8, 5))
-    for detector in metrics["detector"].unique():
-        subset = metrics[metrics["detector"] == detector].sort_values("alpha")
-        style = DETECTOR_STYLES.get(detector, {})
+    for detector_name in metrics["detector"].unique():
+        detector_metrics = metrics[metrics["detector"] == detector_name].sort_values("alpha")
+        style = DETECTOR_STYLES.get(detector_name, {})
         plt.plot(
-            subset["alpha"], subset["TPR"],
-            label=detector,
+            detector_metrics["alpha"],
+            detector_metrics["TPR"],
+            label=detector_name,
             **style,
             linewidth=2,
             markersize=6,
@@ -62,9 +56,9 @@ def plot_tpr_vs_alpha(metrics: pd.DataFrame, figures_dir: Path) -> None:
 
 def plot_auc_tpr_bars(metrics: pd.DataFrame, figures_dir: Path) -> None:
     """Bar chart of AUC_TPR per detector."""
-    aucs = metrics.groupby("detector")["AUC_TPR"].first().sort_values()
+    auc_by_detector = metrics.groupby("detector")["AUC_TPR"].first().sort_values()
     plt.figure(figsize=(8, 4))
-    aucs.plot(kind="barh", color="steelblue")
+    auc_by_detector.plot(kind="barh", color="steelblue")
     plt.xlabel("AUC_TPR")
     plt.title("Area under TPR vs alpha curve")
     plt.tight_layout()
@@ -74,15 +68,17 @@ def plot_auc_tpr_bars(metrics: pd.DataFrame, figures_dir: Path) -> None:
 
 def plot_score_distribution(scores: dict, figures_dir: Path) -> None:
     """Boxplot of H0 scores for all detectors."""
-    h0_data = []
-    for name, alpha_scores in scores.items():
+    h0_score_frames = []
+    for detector_name, alpha_scores in scores.items():
         if 0.0 in alpha_scores:
-            h0_data.append(pd.DataFrame({"detector": name, "score": alpha_scores[0.0]}))
-    if not h0_data:
+            h0_score_frames.append(
+                pd.DataFrame({"detector": detector_name, "score": alpha_scores[0.0]})
+            )
+    if not h0_score_frames:
         return
-    df = pd.concat(h0_data, ignore_index=True)
+    h0_scores_df = pd.concat(h0_score_frames, ignore_index=True)
     plt.figure(figsize=(8, 4))
-    sns.boxplot(data=df, x="detector", y="score", palette="Set2")
+    sns.boxplot(data=h0_scores_df, x="detector", y="score", palette="Set2")
     plt.title("Score distribution under H0 (alpha=0)")
     plt.tight_layout()
     plt.savefig(figures_dir / "h0_scores.png", dpi=150)
@@ -95,13 +91,17 @@ def plot_fpr_calibration(
     figures_dir: Path,
 ) -> None:
     """Empirical FPR vs nominal significance level."""
-    fpr_h0 = metrics[metrics["alpha"] == 0.0][["detector", "FPR"]].copy()
-    if fpr_h0.empty:
+    fpr_at_h0 = metrics[metrics["alpha"] == 0.0][["detector", "FPR"]].copy()
+    if fpr_at_h0.empty:
         return
     plt.figure(figsize=(6, 4))
-    sns.barplot(data=fpr_h0, x="detector", y="FPR", hue="detector", palette="Set2", legend=False)
-    plt.axhline(significance_level, color="red", linestyle="--",
-                label=f"Nominal α={significance_level}")
+    sns.barplot(data=fpr_at_h0, x="detector", y="FPR", hue="detector", palette="Set2", legend=False)
+    plt.axhline(
+        significance_level,
+        color="red",
+        linestyle="--",
+        label=f"Nominal α={significance_level}",
+    )
     plt.title("Empirical FPR under H0 (alpha=0)")
     plt.ylabel("False Positive Rate")
     plt.legend()

@@ -5,7 +5,7 @@ generate_figures.py
 Generate benchmark figures for a given domain.
 
 Usage:
-    python scripts/generate_figures.py --domain adult|cifar10c
+    python scripts/generate_figures.py --domain adult|cifar10c|timeseries|text
 
 Author: Marco Pérez Padilla
 Date:   13-08-2026
@@ -21,25 +21,25 @@ from src.utils.io import load_yaml
 
 CONFIG_PATH = "configs/config.yaml"
 
+RESULTS_DIR_BY_DOMAIN = {
+    "adult": lambda config: config["datasets"]["adult"]["results_dir"],
+    "cifar10c": lambda config: config["images"]["results_dir"],
+    "timeseries": lambda config: config["timeseries"]["results_dir"],
+    "text": lambda config: config["text"]["results_dir"],
+}
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate ShiftBench figures.")
-    parser.add_argument("--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"])
+    parser.add_argument(
+        "--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"]
+    )
     args = parser.parse_args()
 
     config = load_yaml(CONFIG_PATH)
-    exp = config["experiment"]
+    experiment_config = config["experiment"]
 
-    if args.domain == "adult":
-        results_dir = Path(config["datasets"]["adult"]["results_dir"])
-    elif args.domain == "cifar10c":
-        results_dir = Path(config["images"]["results_dir"])
-    elif args.domain == "timeseries":
-        results_dir = Path(config["timeseries"]["results_dir"])
-    elif args.domain == "text":
-        results_dir = Path(config["text"]["results_dir"])
-    else:
-        raise ValueError(f"Unsupported domain: {args.domain}")
+    results_dir = Path(RESULTS_DIR_BY_DOMAIN[args.domain](config))
 
     metrics_path = results_dir / "metrics.csv"
     scores_path = results_dir / "scores.json"
@@ -54,13 +54,13 @@ def main() -> None:
     with open(scores_path) as f:
         raw_scores = json.load(f)
     scores = {
-        det: {float(a): v for a, v in alpha_dict.items()}
-        for det, alpha_dict in raw_scores.items()
+        detector_name: {float(a): v for a, v in alpha_scores.items()}
+        for detector_name, alpha_scores in raw_scores.items()
     }
 
-    sig_level = exp["significance_level"]
+    significance_level = experiment_config["significance_level"]
 
-    plot_all(metrics, scores, figures_dir, significance_level=sig_level)
+    plot_all(metrics, scores, figures_dir, significance_level=significance_level)
     print(f"Figures saved to {figures_dir}")
 
 

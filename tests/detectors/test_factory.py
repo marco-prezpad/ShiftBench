@@ -61,3 +61,20 @@ class TestDetectorFactory:
 
         detector = DetectorFactory.create("dummy3", param=99)
         assert detector.param == 99
+
+    def test_create_from_config_filters_unknown_keys(self):
+        @DetectorFactory.register("dummy4")
+        class Dummy4Detector(BaseDetector):
+            def __init__(self, param=1):
+                self.param = param
+
+            def fit(self, X_ref):
+                pass
+
+            def score(self, X_test):
+                return float(self.param)
+
+        detector = DetectorFactory.create_from_config(
+            "dummy4", {"param": 7, "unsupported_key": "ignored"}
+        )
+        assert detector.param == 7
