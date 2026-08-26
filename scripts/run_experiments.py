@@ -2,11 +2,16 @@
 """
 run_experiments.py
 
-Run ShiftBench benchmark for a given domain.
+Run the ShiftBench benchmark for a given domain, or for all of them.
 
 Usage:
-    python scripts/run_experiments.py [--domain adult|cifar10c|timeseries|text] [--force]
+    python scripts/run_experiments.py --domain adult|cifar10c|timeseries|text [--force]
                                        [--use-detector-params]
+    python scripts/run_experiments.py --all [--force] [--use-detector-params]
+
+`--all` runs the benchmark protocol for every domain and then generates
+that domain's figures (equivalent to running run_experiments.py for
+each domain followed by generate_figures.py for each domain).
 
 Author: Marco Pérez Padilla
 Date:   17-08-2026
@@ -14,11 +19,15 @@ Date:   17-08-2026
 
 import argparse
 
+from generate_figures import generate_figures_for_domain
 from src.evaluation.protocol import BenchmarkProtocol
 from src.utils.io import load_yaml
 
 CONFIG_PATH = "configs/config.yaml"
 DETECTOR_PARAMS_PATH = "configs/detector_params.yaml"
+
+ALL_DOMAINS = ["adult", "cifar10c", "timeseries", "text"]
+DEFAULT_ALPHAS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 # configs/config.yaml uses "embedding_drift" for readability; the detector
 # registry (see src/detectors/factory.py) uses the shorter "embedding".
@@ -49,10 +58,81 @@ def enabled_detectors_from_config(config: dict) -> list[str] | None:
     return enabled or None
 
 
+def build_protocol(domain: str, config: dict, common_kwargs: dict) -> BenchmarkProtocol:
+    """Build the BenchmarkProtocol for one domain from configs/config.yaml."""
+    experiment_config = config["experiment"]
+
+    if domain == "adult":
+        dataset_config = config["datasets"]["adult"]
+        return BenchmarkProtocol(
+            domain="adult",
+            data_path=dataset_config["file"],
+            results_dir=dataset_config["results_dir"],
+            random_state=experiment_config["random_state"],
+            reference_frac=experiment_config.get("reference_frac", 0.5),
+            subgroup_col=dataset_config["shift"]["subgroup_col"],
+            subgroup_value=dataset_config["shift"]["subgroup_value"],
+            alphas=dataset_config["alphas"],
+            **common_kwargs,
+        )
+    elif domain == "cifar10c":
+        images_config = config.get("images", {})
+        return BenchmarkProtocol(
+            domain="cifar10c",
+            embeddings_dir=images_config.get("embeddings_dir", "embeddings/cifar10"),
+            results_dir=images_config.get("results_dir", "results/cifar10c"),
+            random_state=experiment_config["random_state"],
+            class_a=images_config.get("class_a", 0),
+            class_b=images_config.get("class_b", 1),
+            alphas=images_config.get("alphas", DEFAULT_ALPHAS),
+            **common_kwargs,
+        )
+    elif domain == "timeseries":
+        timeseries_config = config.get("timeseries", {})
+        return BenchmarkProtocol(
+            domain="timeseries",
+            results_dir=timeseries_config.get("results_dir", "results/timeseries"),
+            random_state=experiment_config["random_state"],
+            series_n_samples=timeseries_config.get("series_n_samples", 1000),
+            series_length=timeseries_config.get("series_length", 50),
+            alphas=timeseries_config.get("alphas", DEFAULT_ALPHAS),
+            **common_kwargs,
+        )
+    elif domain == "text":
+        text_config = config.get("text", {})
+        return BenchmarkProtocol(
+            domain="text",
+            embeddings_dir=text_config.get("embeddings_dir", "embeddings/newsgroups"),
+            results_dir=text_config.get("results_dir", "results/text"),
+            random_state=experiment_config["random_state"],
+            text_test_size=text_config.get("text_test_size", 3000),
+            text_kl_n_components=text_config.get("text_kl_n_components", 50),
+            alphas=text_config.get("alphas", DEFAULT_ALPHAS),
+            **common_kwargs,
+        )
+    else:
+        raise ValueError(f"Unsupported domain: {domain}")
+
+
+def run_domain(domain: str, config: dict, common_kwargs: dict) -> None:
+    """Run the benchmark protocol for one domain, then generate its figures."""
+    protocol = build_protocol(domain, config, common_kwargs)
+    protocol.run()
+    generate_figures_for_domain(domain, config)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ShiftBench benchmark.")
     parser.add_argument(
         "--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"]
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Run the benchmark protocol for every domain and generate every "
+            "domain's figures, instead of a single --domain."
+        ),
     )
     parser.add_argument("--force", action="store_true")
     parser.add_argument(
@@ -80,62 +160,9 @@ def main() -> None:
         detector_params=detector_params,
     )
 
-    if args.domain == "adult":
-        dataset_config = config["datasets"]["adult"]
-        protocol = BenchmarkProtocol(
-            domain="adult",
-            data_path=dataset_config["file"],
-            results_dir=dataset_config["results_dir"],
-            random_state=experiment_config["random_state"],
-            reference_frac=experiment_config.get("reference_frac", 0.5),
-            subgroup_col=dataset_config["shift"]["subgroup_col"],
-            subgroup_value=dataset_config["shift"]["subgroup_value"],
-            alphas=dataset_config["alphas"],
-            **common_kwargs,
-        )
-    elif args.domain == "cifar10c":
-        images_config = config.get("images", {})
-        protocol = BenchmarkProtocol(
-            domain="cifar10c",
-            embeddings_dir=images_config.get("embeddings_dir", "embeddings/cifar10"),
-            results_dir=images_config.get("results_dir", "results/cifar10c"),
-            random_state=experiment_config["random_state"],
-            class_a=images_config.get("class_a", 0),
-            class_b=images_config.get("class_b", 1),
-            alphas=images_config.get(
-                "alphas", [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-            ),
-            **common_kwargs,
-        )
-    elif args.domain == "timeseries":
-        timeseries_config = config.get("timeseries", {})
-        protocol = BenchmarkProtocol(
-            domain="timeseries",
-            results_dir=timeseries_config.get("results_dir", "results/timeseries"),
-            random_state=experiment_config["random_state"],
-            series_n_samples=timeseries_config.get("series_n_samples", 1000),
-            series_length=timeseries_config.get("series_length", 50),
-            alphas=timeseries_config.get(
-                "alphas", [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-            ),
-            **common_kwargs,
-        )
-    elif args.domain == "text":
-        text_config = config.get("text", {})
-        protocol = BenchmarkProtocol(
-            domain="text",
-            embeddings_dir=text_config.get("embeddings_dir", "embeddings/newsgroups"),
-            results_dir=text_config.get("results_dir", "results/text"),
-            random_state=experiment_config["random_state"],
-            text_test_size=text_config.get("text_test_size", 3000),
-            text_kl_n_components=text_config.get("text_kl_n_components", 50),
-            alphas=text_config.get(
-                "alphas", [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-            ),
-            **common_kwargs,
-        )
-
-    protocol.run()
+    domains = ALL_DOMAINS if args.all else [args.domain]
+    for domain in domains:
+        run_domain(domain, config, common_kwargs)
 
 
 if __name__ == "__main__":
