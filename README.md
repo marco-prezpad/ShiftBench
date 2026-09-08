@@ -44,7 +44,7 @@ shift:
 | Domain       | Data                                     | Shift type                                    |
 |--------------|-------------------------------------------|-------------------------------------------------|
 | `adult`      | UCI Adult (tabular)                       | Over-representation of a demographic subgroup   |
-| `cifar10c`   | ResNet18 embeddings of CIFAR-10           | Mixture of two classes                          |
+| `cifarc`   | ResNet18 embeddings of CIFAR-10           | Mixture of two classes                          |
 | `timeseries` | Synthetic series (sine vs. square wave)   | Mixture of two classes                          |
 | `text`       | TF-IDF of 20 Newsgroups (2 categories)    | Mixture of two classes                          |
 
@@ -105,7 +105,7 @@ python scripts/download_datasets.py
 
 Downloads `data/adult.data`, `data/adult.test`, and `data/adult.names`.
 
-**CIFAR-10** (`cifar10c` domain):
+**CIFAR-10** (`cifarc` domain):
 
 ```bash
 python scripts/extract_cifar10_embeddings.py
@@ -155,7 +155,7 @@ All configuration lives under `configs/`:
 
 ```bash
 python scripts/run_experiments.py --domain adult
-python scripts/run_experiments.py --domain cifar10c
+python scripts/run_experiments.py --domain cifarc
 python scripts/run_experiments.py --domain timeseries
 python scripts/run_experiments.py --domain text
 ```
@@ -224,11 +224,11 @@ detector = DetectorFactory.create("mmd", device="cpu")
 ```
 
 ```python
-@DomainHandlerFactory.register("cifar10c")
+@DomainHandlerFactory.register("cifarc")
 class Cifar10cDomainHandler(BaseDomainHandler):
     ...
 
-handler = DomainHandlerFactory.create("cifar10c", embeddings_dir=...)
+handler = DomainHandlerFactory.create("cifarc", embeddings_dir=...)
 ```
 
 To see what detectors or domains exist at runtime:

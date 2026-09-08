@@ -5,7 +5,7 @@ run_experiments.py
 Run the ShiftBench benchmark for a given domain, or for all of them.
 
 Usage:
-    python scripts/run_experiments.py --domain adult|cifar10c|timeseries|text [--force]
+    python scripts/run_experiments.py --domain adult|cifar10|timeseries|text [--force]
                                        [--use-detector-params]
     python scripts/run_experiments.py --all [--force] [--use-detector-params]
 
@@ -26,7 +26,7 @@ from src.utils.io import load_yaml
 CONFIG_PATH = "configs/config.yaml"
 DETECTOR_PARAMS_PATH = "configs/detector_params.yaml"
 
-ALL_DOMAINS = ["adult", "cifar10c", "timeseries", "text"]
+ALL_DOMAINS = ["adult", "cifar10", "timeseries", "text"]
 DEFAULT_ALPHAS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 # configs/config.yaml uses "embedding_drift" for readability; the detector
@@ -75,12 +75,12 @@ def build_protocol(domain: str, config: dict, common_kwargs: dict) -> BenchmarkP
             alphas=dataset_config["alphas"],
             **common_kwargs,
         )
-    elif domain == "cifar10c":
+    elif domain == "cifar10":
         images_config = config.get("images", {})
         return BenchmarkProtocol(
-            domain="cifar10c",
+            domain="cifar10",
             embeddings_dir=images_config.get("embeddings_dir", "embeddings/cifar10"),
-            results_dir=images_config.get("results_dir", "results/cifar10c"),
+            results_dir=images_config.get("results_dir", "results/cifar10"),
             random_state=experiment_config["random_state"],
             class_a=images_config.get("class_a", 0),
             class_b=images_config.get("class_b", 1),
@@ -124,7 +124,7 @@ def run_domain(domain: str, config: dict, common_kwargs: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ShiftBench benchmark.")
     parser.add_argument(
-        "--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"]
+        "--domain", default="adult", choices=["adult", "cifar10", "timeseries", "text"]
     )
     parser.add_argument(
         "--all",

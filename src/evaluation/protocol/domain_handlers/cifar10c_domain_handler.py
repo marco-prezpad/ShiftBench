@@ -19,7 +19,7 @@ from .base_domain_handler import BaseDomainHandler
 from .factory import DomainHandlerFactory
 
 
-@DomainHandlerFactory.register("cifar10c")
+@DomainHandlerFactory.register("cifar10")
 class Cifar10cDomainHandler(BaseDomainHandler):
     """Prepares reference/pool data and shifts for the CIFAR-10 image domain."""
 

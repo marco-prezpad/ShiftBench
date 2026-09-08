@@ -35,7 +35,7 @@ class DomainHandlerFactory:
         callers can pass one shared kwargs bundle for every domain.
 
         Args:
-            name: Domain name (e.g. "adult", "cifar10c").
+            name: Domain name (e.g. "adult", "cifar10").
             **kwargs: Arguments passed to the handler constructor.
 
         Returns:

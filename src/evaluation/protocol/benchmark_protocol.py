@@ -2,7 +2,7 @@
 benchmark_protocol.py
 
 Generic benchmark protocol for ShiftBench.
-Supports domains: 'adult' (tabular), 'cifar10c' (image embeddings),
+Supports domains: 'adult' (tabular), 'cifar10' (image embeddings),
 'timeseries' (synthetic series), and 'text' (TF-IDF embeddings).
 
 All domain-specific data preparation, shift generation, and
@@ -136,7 +136,7 @@ class BenchmarkProtocol:
             explicit_kwargs = {}
             if name in ("mmd", "lsdd"):
                 explicit_kwargs["device"] = "cuda" if torch.cuda.is_available() else "cpu"
-            if name == "embedding" and self.domain in ("cifar10c", "text"):
+            if name == "embedding" and self.domain in ("cifar10", "text"):
                 explicit_kwargs["n_components"] = 64
             # Optional hyperparameters from configs/detector_params.yaml (opt-in).
             # explicit_kwargs always wins so this never changes default behavior.

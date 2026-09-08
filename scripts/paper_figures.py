@@ -19,18 +19,18 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-DOMAINS = ["adult", "cifar10c", "timeseries", "text"]
+DOMAINS = ["adult", "cifar10", "timeseries", "text"]
 DOMAIN_TITLES = {
     "adult": "UCI Adult",
-    "cifar10c": "CIFAR-10-C",
+    "cifar10": "CIFAR-10",
     "timeseries": "Time series",
     "text": "Text",
 }
 
 NONMONO_CASES = [
-    ("cifar10c", "kl", "KL CIFAR-10-C"),
+    ("cifar10", "kl", "KL CIFAR-10"),
     ("text", "kl", "KL Text"),
-    ("cifar10c", "embedding", "Embedding CIFAR-10-C"),
+    ("cifar10", "embedding", "Embedding CIFAR-10"),
 ]
 
 DETECTOR_COLORS = {
