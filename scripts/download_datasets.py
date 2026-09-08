@@ -25,11 +25,11 @@ ADULT_FILES = {
 }
 
 
-def download_file(url: str, dest: Path) -> None:
-    """Download a file from url to dest with progress feedback."""
-    print(f"  Downloading {dest.name}...", end=" ", flush=True)
+def download_file(url: str, destination: Path) -> None:
+    """Download a file from url to destination with progress feedback."""
+    print(f"  Downloading {destination.name}...", end=" ", flush=True)
     try:
-        urllib.request.urlretrieve(url, dest)
+        urllib.request.urlretrieve(url, destination)
         print("OK")
     except Exception as e:
         print(f"FAILED: {e}")
@@ -42,11 +42,11 @@ def main() -> None:
 
     print("Downloading UCI Adult dataset...")
     for filename, url in ADULT_FILES.items():
-        dest = DATA_DIR / filename
-        if dest.exists():
+        destination = DATA_DIR / filename
+        if destination.exists():
             print(f"  {filename} already exists, skipping.")
             continue
-        download_file(url, dest)
+        download_file(url, destination)
     print("  UCI Adult done.")
 
     print("Note: CIFAR-10-C will be auto-downloaded by torchvision on first use.")

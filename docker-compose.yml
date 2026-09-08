@@ -12,9 +12,10 @@ services:
       - ./embeddings:/workspace/embeddings
     working_dir: /workspace
     environment:
-      - PYTHONPATH=/workspace/src
+      - PYTHONPATH=/workspace
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     deploy:
       resources:
         reservations:
@@ -36,8 +37,9 @@ services:
       - .:/workspace:cached
     working_dir: /workspace
     environment:
-      - PYTHONPATH=/workspace/src
+      - PYTHONPATH=/workspace
       - PYTHONUNBUFFERED=1
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     tty: true
     stdin_open: true
     command: sleep infinity
@@ -57,9 +59,10 @@ services:
       - ./notebooks:/workspace/notebooks
     working_dir: /workspace
     environment:
-      - PYTHONPATH=/workspace/src
+      - PYTHONPATH=/workspace
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     deploy:
       resources:
         reservations:

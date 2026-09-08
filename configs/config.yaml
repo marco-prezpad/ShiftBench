@@ -1,15 +1,17 @@
 # ShiftBench global configuration
 # Author: Marco Pérez Padilla
-# Date:   09-08-2026
+# Date:   19-08-2026
 
 experiment:
   random_state: 42
-  n_bootstrap_runs: 30
+  n_bootstrap_runs: 100
   test_size: 0.3
   significance_level: 0.05
+  max_kernel_ref_size: 1000
 
 datasets:
   adult:
+    results_dir: "results/adult"
     enabled: true
     name: "UCI Adult"
     domain: "tabular"
@@ -20,7 +22,11 @@ datasets:
       subgroup_value: "Black"
     alphas:
       - 0.0
+      - 0.02
+      - 0.05
+      - 0.08
       - 0.1
+      - 0.15
       - 0.2
       - 0.3
       - 0.4
@@ -28,8 +34,89 @@ datasets:
       - 0.6
       - 0.7
       - 0.8
+      - 0.85
       - 0.9
+      - 0.95
       - 1.0
+
+images:
+  embeddings_dir: "embeddings/cifar10"
+  results_dir: "results/cifar10c"
+  class_a: 0
+  class_b: 1
+  alphas:
+    - 0.0
+    - 0.02
+    - 0.05
+    - 0.08
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.45
+    - 0.5
+    - 0.55
+    - 0.6
+    - 0.65
+    - 0.7
+    - 0.8
+    - 0.85
+    - 0.9
+    - 0.95
+    - 1.0
+
+timeseries:
+  results_dir: "results/timeseries"
+  series_n_samples: 1000
+  series_length: 50
+  alphas:
+    - 0.0
+    - 0.02
+    - 0.05
+    - 0.08
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 0.95
+    - 1.0
+
+text:
+  embeddings_dir: "embeddings/newsgroups"
+  results_dir: "results/text"
+  text_test_size: 3000
+  text_kl_n_components: 50
+  alphas:
+    - 0.0
+    - 0.005
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.03
+    - 0.04
+    - 0.05
+    - 0.08
+    - 0.1
+    - 0.12
+    - 0.15
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.85
+    - 0.88
+    - 0.9
+    - 0.95
+    - 1.0
+
 
 detectors:
   mmd:
@@ -47,9 +134,3 @@ detectors:
   evidently:
     enabled: true
     backend: "evidently"
-
-output:
-  results_dir: "results"
-  figures_dir: "results/figures"
-  save_scores: true
-  save_aggregated: true
