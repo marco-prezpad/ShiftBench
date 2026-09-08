@@ -41,7 +41,7 @@ datasets:
 
 images:
   embeddings_dir: "embeddings/cifar10"
-  results_dir: "results/cifar10c"
+  results_dir: "results/cifar10"
   class_a: 0
   class_b: 1
   alphas:

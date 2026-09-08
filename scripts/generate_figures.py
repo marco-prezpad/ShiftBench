@@ -5,7 +5,7 @@ generate_figures.py
 Generate benchmark figures for a given domain, or for all of them.
 
 Usage:
-    python scripts/generate_figures.py --domain adult|cifar10c|timeseries|text
+    python scripts/generate_figures.py --domain adult|cifar10|timeseries|text
     python scripts/generate_figures.py --all
 
 Author: Marco Pérez Padilla
@@ -22,11 +22,11 @@ from src.utils.io import load_yaml
 
 CONFIG_PATH = "configs/config.yaml"
 
-ALL_DOMAINS = ["adult", "cifar10c", "timeseries", "text"]
+ALL_DOMAINS = ["adult", "cifar10", "timeseries", "text"]
 
 RESULTS_DIR_BY_DOMAIN = {
     "adult": lambda config: config["datasets"]["adult"]["results_dir"],
-    "cifar10c": lambda config: config["images"]["results_dir"],
+    "cifar10": lambda config: config["images"]["results_dir"],
     "timeseries": lambda config: config["timeseries"]["results_dir"],
     "text": lambda config: config["text"]["results_dir"],
 }
@@ -69,7 +69,7 @@ def generate_figures_for_domain(domain: str, config: dict) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate ShiftBench figures.")
     parser.add_argument(
-        "--domain", default="adult", choices=["adult", "cifar10c", "timeseries", "text"]
+        "--domain", default="adult", choices=["adult", "cifar10", "timeseries", "text"]
     )
     parser.add_argument(
         "--all",

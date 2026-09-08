@@ -24,7 +24,7 @@ N_BOOTSTRAP = 100
 P0 = 0.05                 
 DOMAINS = {
     "adult": "results/adult/metrics.csv",
-    "cifar10c": "results/cifar10c/metrics.csv",
+    "cifar10": "results/cifar10/metrics.csv",
     "timeseries": "results/timeseries/metrics.csv",
     "text": "results/text/metrics.csv",
 }
