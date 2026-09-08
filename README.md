@@ -73,6 +73,25 @@ For development (tests, lint):
 pip install -e ".[dev]"
 ```
 
+## Docker
+
+Recommended alternativo to reproduce the exact same environment:
+
+```bash
+docker compose up -d shiftbench
+docker compose exec shiftbench python scripts/run_experiments.py --domain adult
+```
+
+For Jupyter support:
+
+```bash
+docker compose up -d jupyter
+```
+
+Access `http://localhost:8888`
+
+> By using this alternative, you must run all commands written in this file inside the docker itself as follows: `docker compose exec shiftbench <command>`
+
 
 ## Data and embeddings
 
@@ -148,6 +167,8 @@ Available flags:
 - `--use-detector-params` — apply `configs/detector_params.yaml` (see
   above).
 
+> Selective re-runs: if you disable one or more detectors in config.yaml and run with --force, ShiftBench will only re-run the enabled detectors. The scores and calibration of the disabled detectors are preserved from the previous scores.json and calibration_scores.json, so you don't lose results for detectors you didn't want to recompute.
+
 The benchmark is **resumable**: if interrupted, it saves a checkpoint
 after every `alpha` (`results/<domain>/scores_partial.json`) and, when
 relaunched, picks up where it left off instead of redoing work. If
@@ -164,6 +185,12 @@ Generates, under `results/<domain>/figures/`: TPR vs. alpha per
 detector, AUC-TPR bar chart, score distribution under H0, and FPR
 calibration against the nominal significance level.
 
+```bash
+python scripts/paper_figures.py
+```
+
+Generates the combined 2×2 TPR figure and the non-monotonic score
+figure used in the paper, under results/figures/.
 
 ## Architecture
 
@@ -249,8 +276,9 @@ delegates to:
    with `@DetectorFactory.register("my_detector")`.
 2. Import it once (so the decorator runs) alongside the other detector
    imports in `benchmark_protocol.py`.
-3. Add it to `enabled_detectors` in `config.yaml` if it should be
-   enabled by default.
+3. Add its enabled flag to the detectors section of config.yaml
+   (or include it in the default detector list if you prefer to run it
+   everywhere).
 
 **Adding a new domain:**
 
@@ -308,6 +336,7 @@ scripts/
     extract_newsgroups_embeddings.py # downloads 20 Newsgroups and vectorizes with TF-IDF
     run_experiments.py               # entry point for running the benchmark
     generate_figures.py              # entry point for generating figures
+    paper_figures.py                 # combined TPR figure + non-monotonic score figure
 src/
     data/
         loaders/            # raw data loading (adult, cifar10)

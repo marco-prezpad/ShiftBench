@@ -41,4 +41,4 @@ class EmbeddingDriftDetector(BaseDetector):
 
         cross_distance = np.mean(cdist(self._X_ref_proj, X_test_proj))
         reference_self_distance = np.mean(cdist(self._X_ref_proj, self._X_ref_proj))
-        return float(max(0.0, cross_distance - reference_self_distance))
+        return float(abs(cross_distance - reference_self_distance))

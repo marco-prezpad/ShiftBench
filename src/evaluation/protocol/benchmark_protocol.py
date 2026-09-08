@@ -101,10 +101,12 @@ class BenchmarkProtocol:
         self.detector_params = detector_params or {}
 
         self.scores: dict[str, dict[float, list[float]]] = {}
+        self._calibration_scores: dict[str, list[float]] = {}
         self.X_ref_numeric: np.ndarray | None = None
         self.X_pool_numeric: np.ndarray | None = None
         self._rng: np.random.Generator | None = None
         self._checkpoint_path = self.results_dir / "scores_partial.json"
+        self._calibration_path = self.results_dir / "calibration_scores.json"
 
         self._handler = DomainHandlerFactory.create(
             domain,
@@ -204,6 +206,37 @@ class BenchmarkProtocol:
                 name, detectors[name], X_test_numeric, X_test_evidently, X_test_kl
             )
 
+    # Calibration 
+    def _load_or_compute_calibration(self, detectors: dict) -> dict[str, list[float]]:
+        """Return per-detector alpha=0 scores used only to set the threshold.
+
+        Drawn with seeds disjoint from the alpha=0 evaluation repetitions in
+        `_run_alpha`, so the FPR/TNR later reported at alpha=0 is not
+        evaluated against the same sample that calibrated its threshold.
+        """
+        if self._calibration_path.exists() and not self.force:
+            with open(self._calibration_path) as f:
+                return json.load(f)
+
+        calibration_scores: dict[str, list[float]] = {name: [] for name in detectors}
+        for run_id in tqdm(range(self.n_bootstrap), desc="Calibration (held-out)", leave=False):
+            seed = self.random_state + self.n_bootstrap + run_id
+            X_calib_shifted, _ = self._handler.generate_shifted_test_set(alpha=0.0, seed=seed)
+
+            X_calib_numeric = self._handler.build_numeric_test_view(X_calib_shifted)
+            X_calib_evidently = self._handler.build_evidently_test_view(X_calib_shifted)
+            X_calib_kl = self._handler.build_kl_test_view(X_calib_shifted)
+
+            for name in detectors:
+                score = self._score_with_oom_fallback(
+                    name, detectors, X_calib_numeric, X_calib_evidently, X_calib_kl
+                )
+                calibration_scores[name].append(score)
+
+        with open(self._calibration_path, "w") as f:
+            json.dump(calibration_scores, f, indent=2)
+        return calibration_scores
+
     # Checkpointing
     def _load_checkpoint(self) -> set[float]:
         """Load a partial checkpoint (if any) and return the set of finished alphas."""
@@ -245,6 +278,7 @@ class BenchmarkProtocol:
                 completed_alphas,
                 self.n_bootstrap,
                 threshold_percentile=(1 - self.significance_level) * 100,
+                calibration_scores=self._calibration_scores,
             )
             partial_metrics.to_csv(self.results_dir / "metrics_partial.csv", index=False)
 
@@ -261,6 +295,7 @@ class BenchmarkProtocol:
             self.alphas,
             self.n_bootstrap,
             threshold_percentile=(1 - self.significance_level) * 100,
+            calibration_scores=self._calibration_scores,
         )
         metrics_df.to_csv(self.results_dir / "metrics.csv", index=False)
 
@@ -292,6 +327,38 @@ class BenchmarkProtocol:
         self._save_partial_metrics()
         self._save_global_checkpoint()
 
+    # Selective merging for disabled detectors when using --force
+    def _merge_previous_scores_for_disabled_detectors(self) -> None:
+        """Preserve scores of detectors not enabled in this run.
+
+        When running with --force and a subset of detectors enabled, this
+        avoids losing the existing scores of detectors that were not run.
+        Only detectors absent from self.scores are copied from the
+        previously saved scores.json.
+        """
+        previous_scores_path = self.results_dir / "scores.json"
+        if not previous_scores_path.exists():
+            return
+
+        with open(previous_scores_path) as f:
+            previous_scores = json.load(f)
+
+        for detector_name, alpha_dict in previous_scores.items():
+            if detector_name not in self.scores:
+                self.scores[detector_name] = alpha_dict
+
+    def _merge_previous_calibration_for_disabled_detectors(self) -> None:
+        """Preserve calibration scores of detectors not enabled in this run."""
+        if not self._calibration_path.exists():
+            return
+
+        with open(self._calibration_path) as f:
+            previous_calibration = json.load(f)
+
+        for detector_name, scores in previous_calibration.items():
+            if detector_name not in self._calibration_scores:
+                self._calibration_scores[detector_name] = scores
+
     def run(self) -> None:
         logger.info(f"Starting benchmark protocol for domain '{self.domain}'...")
         ensure_dir(self.results_dir)
@@ -317,8 +384,16 @@ class BenchmarkProtocol:
         detectors = self._init_detectors()
         self._fit_all_detectors(detectors)
 
+        self._calibration_scores = self._load_or_compute_calibration(detectors)
+
+        if self.force:
+            self._merge_previous_calibration_for_disabled_detectors()
+
         for alpha in tqdm(remaining_alphas, desc="Alphas"):
             self._run_alpha(alpha, detectors)
+
+        if self.force:
+            self._merge_previous_scores_for_disabled_detectors()
 
         self._save_final_results()
         logger.info("Benchmark finished.")

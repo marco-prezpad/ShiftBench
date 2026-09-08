@@ -28,6 +28,7 @@ def plot_all(
     plot_tpr_vs_alpha(metrics, figures_dir)
     plot_auc_tpr_bars(metrics, figures_dir)
     plot_score_distribution(scores, figures_dir)
+    plot_score_distribution_no_kl(scores, figures_dir)   
     plot_fpr_calibration(metrics, significance_level, figures_dir)
 
 
@@ -82,6 +83,35 @@ def plot_score_distribution(scores: dict, figures_dir: Path) -> None:
     plt.title("Score distribution under H0 (alpha=0)")
     plt.tight_layout()
     plt.savefig(figures_dir / "h0_scores.png", dpi=150)
+    plt.close()
+
+
+def plot_score_distribution_no_kl(scores: dict, figures_dir: Path) -> None:
+    """Boxplot of H0 scores for all detectors except KL.
+
+    KL often produces scores on a much larger scale than the other
+    detectors, which can hide their variability. This additional figure
+    zooms in on the remaining detectors.
+    """
+    h0_score_frames = []
+    for detector_name, alpha_scores in scores.items():
+        # Skip KL to avoid scaling issues
+        if detector_name == "kl":
+            continue
+        if 0.0 in alpha_scores:
+            h0_score_frames.append(
+                pd.DataFrame({"detector": detector_name, "score": alpha_scores[0.0]})
+            )
+    if not h0_score_frames:
+        return
+
+    h0_scores_df = pd.concat(h0_score_frames, ignore_index=True)
+
+    plt.figure(figsize=(8, 4))
+    sns.boxplot(data=h0_scores_df, x="detector", y="score", palette="Set2")
+    plt.title("Score distribution under H0 (alpha=0) - excluding KL")
+    plt.tight_layout()
+    plt.savefig(figures_dir / "h0_scores_no_kl.png", dpi=150)
     plt.close()
 
 

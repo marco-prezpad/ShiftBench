@@ -52,19 +52,30 @@ def compute_detection_metrics(
     alphas: list[float],
     n_bootstrap: int,
     threshold_percentile: float = 95.0,
+    calibration_scores: dict[str, list[float]] | None = None,
 ) -> pd.DataFrame:
     """Compute all metrics for every detector and alpha.
 
     The AUC‑TPR includes α=0, and TPR@α=0.5 uses linear interpolation.
+
+    `calibration_scores`, when provided, is a held-out set of alpha=0
+    scores per detector used only to set the threshold, so the FPR/TNR
+    reported at alpha=0 (from `scores_dict`) is not evaluated against
+    the same sample that calibrated it. If omitted, the threshold falls
+    back to `scores_dict`'s own alpha=0 scores, as before.
     """
     rows = []
     global_metrics = {}
+    calibration_scores = calibration_scores or {}
 
     for detector_name, alpha_scores in scores_dict.items():
         h0_scores = np.array(alpha_scores.get(0.0, []))
         if len(h0_scores) == 0:
             continue
-        threshold = compute_threshold(h0_scores, threshold_percentile)
+        h0_calibration = np.array(calibration_scores.get(detector_name, []))
+        if len(h0_calibration) == 0:
+            h0_calibration = h0_scores
+        threshold = compute_threshold(h0_calibration, threshold_percentile)
 
         alpha_values, tpr_values = [], []
         for alpha in alphas:
